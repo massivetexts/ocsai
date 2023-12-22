@@ -17,13 +17,14 @@ def can_render_md_html():
     except ImportError:
         # IPython is not installed
         return False
-    
+ 
 
-def mprint(message):
+def mprint(*messages):
     '''If renderable, print as markdown; else print as text.'''
+    full_message = ' '.join(str(message) for message in messages)
     renderable = can_render_md_html()
     if renderable:
-        from IPython.display import Markdown
-        display(Markdown(message))
+        from IPython.display import Markdown, display
+        display(Markdown(full_message))
     else:
-        print(message)
+        print(full_message)
