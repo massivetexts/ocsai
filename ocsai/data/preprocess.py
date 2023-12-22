@@ -1,11 +1,40 @@
 import pingouin as pg
 import hashlib
 import numpy as np
+import pandas as pd
+import duckdb
 from pathlib import Path
-from ..utils import mprint
+from ..utils import mprint, can_render_md_html
 
 
-def simple_stats(df, rater_cols=False):
+def infer_question(prompt, language='eng'):
+    '''A very basic way to infer the question from the prompt. Generally,
+    the non-English versions are chatbot-written, so please send fixes
+    to peter.organisciak@du.edu! Some bad grammar is likely fine, though may have
+    small benefits.
+    '''
+    phrases = {
+        'ara': lambda y: f"ما هو استخدام مفاجئ لـ {y}؟",  # Arabic
+        'chi': lambda y: f"什么是{y}的一个令人惊讶的用途？",  # Chinese
+        'dut': lambda y: f"Wat is een verrassend gebruik voor een {y}?",  # Dutch
+        'eng': lambda y: f"What is a surprising use for {y}?",  # English
+        'fre': lambda y: f"Quel est un usage surprenant pour un {y}?",  # French
+        'ger': lambda y: f"Was ist eine überraschende Verwendung für ein {y}?",  # German
+        'heb': lambda y: f"מהו שימוש מפתיע ל{y}?",  # Hebrew
+        'ita': lambda y: f"Qual è un uso sorprendente per un {y}?",  # Italian
+        'pol': lambda y: f"Jakie jest zaskakujące zastosowanie dla {y}?",  # Polish
+        'rus': lambda y: f"Какое удивительное применение для {y}?",  # Russian
+        'spa': lambda y: f"¿Cuál es un uso sorprendente para un {y}?"  # Spanish
+    }
+
+    # Get the phrase in the requested language, or fall back to English
+    phrase = phrases.get(language, phrases['eng'])
+
+    # Apply the phrase to the object
+    return phrase(prompt.upper())
+
+                
+def simple_stats(df, rater_cols=False, name=None, save_dir=None):
     '''
     Prints simple stats about the data. Expects a DataFrame with the following
     columns:
@@ -17,22 +46,64 @@ def simple_stats(df, rater_cols=False):
 
     If rater_cols is provided, will also print ICC2k scores for each rater.
     '''
-    print("# of prompts", len(df.prompt.unique()))
-    print("# of participants", len(df.participant.unique()))
-    print("# of data points", len(df))
-    print("Prompts", df.prompt.unique())
+    stats_data = {
+        "name": name,
+        "no_of_prompts": len(df.prompt.unique()),
+        "no_of_participants": len(df.participant.unique()),
+        "no_of_data_points": len(df),
+        "prompts": df.prompt.unique().tolist(),
+        "ICC2k": None,
+        "ICC2k_CI": None,
+        "ICC3k": None,
+        "rater_cols": None,
+        "no_of_raters": None
+    }
+    
     if rater_cols:
-        print("# of raters", len(rater_cols))
-        print("Intraclass correlation coefficients (report ICC2k)")
-        x = df[['id']+rater_cols].melt(id_vars='id', var_name='rater',
-                                       value_name='rating')
-        icc = pg.intraclass_corr(data=x, targets='id', raters='rater',
-                                 ratings='rating', nan_policy='omit')
-        print(icc.round(2))
+        stats_data["rater_cols"] = rater_cols
+        stats_data["no_of_raters"] = len(rater_cols)
+
+    if rater_cols and len(rater_cols) > 1:
+        try:
+            x = df[['id']+rater_cols].melt(id_vars='id', var_name='rater',
+                                           value_name='rating')
+            icc = pg.intraclass_corr(data=x, targets='id', raters='rater',
+                                     ratings='rating', nan_policy='omit')
+            stats_data["ICC2k"] = icc[icc.Type == 'ICC2k'].ICC.round(2).values[0]
+            stats_data["ICC2k_CI"] = icc[icc.Type == 'ICC2k']['CI95%'].values[0]
+            stats_data["ICC2k_CI"] = str(stats_data["ICC2k_CI"][0]) + '-' + str(stats_data["ICC2k_CI"][1])
+            stats_data['ICC3k'] = icc[icc.Type == 'ICC3k'].ICC.round(2).values[0]
+        except AssertionError:
+            mprint("WARNING: ICC has an undefined error for this dataset")
+
+    # print stats
+    print_str = ""
+    for key, value in stats_data.items():
+        print_str += f"- {key}: {value}\n"
+    mprint(print_str)
+
+    # Saving to DuckDB
+    if save_dir:
+        assert name, "Name must be provided to save stats"
+        conn = duckdb.connect(f"{save_dir}/stats_db.duckdb")
+        stats_df = pd.DataFrame([stats_data])
+        # Create table if not exists
+        conn.sql("CREATE TABLE IF NOT EXISTS stats (name TEXT, no_of_prompts INTEGER, "
+                 "no_of_participants INTEGER, no_of_data_points INTEGER, "
+                 "prompts TEXT, ICC2k REAL, ICC2k_CI TEXT, ICC3k REAL, "
+                 "rater_cols TEXT, no_of_raters INTEGER)")
+        
+        # Checking if the row exists
+        existing_rows = conn.sql(f"SELECT * FROM stats WHERE name = '{name}'").fetchall()
+        if existing_rows:
+            conn.sql(f"DELETE FROM stats WHERE name = '{name}'")
+        stats_df.to_sql('stats', conn, if_exists='append', index=False)
+
+        conn.close()
 
 
 def prep_general(data, name, rater_cols=None, test_type='uses',
-                 language='eng', range=(1,5), return_full=False,
+                 language='eng', range=None, return_full=False,
                  aggregate_scores=True, drop_noresponse=True,
                  print_stats=True, round_adjust=1,
                  null_marker=None, column_mappings=None,
@@ -55,7 +126,7 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
         - (optional) rater columns, describing individual rater scores
         - question (optional) - the full human-readable question, 
             including the prompt. Optional but recommended, because
-            automatically inferred questions are limits to type=uses.
+            automatically inferred questions are limited to type=uses.
         - [rater columns] - columns describing individual human judges' scores.
             List the names of the columns with the rater_cols argument, else
             it is inferred.
@@ -75,7 +146,8 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
     rater_cols: A list of column names that describe individual rater scores.
 
     language: A string describing the language of the data. Use the ISO-639-2
-        codes (https://www.loc.gov/standards/iso639-2/php/code_list.php)
+        codes (https://www.loc.gov/standards/iso639-2/php/code_list.php). This
+        parameter is superseced by the `language` column in data, if provided.
         [default: eng]
 
     range: A tuple of the min and max of the input data's range. If not provided,
@@ -118,7 +190,8 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
 
     meta: A dictionary of metadata. This is only used for logging.
 
-    save_dir: If provided, save the data to this directory, as {name}.csv.
+    save_dir: If provided, save the data to this directory, as {name}.csv, 
+        and stats as stats_db.duckdb
     '''
     if meta:
         if meta.get('inline'):
@@ -134,7 +207,7 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
         rater_cols = [col for col in data.columns if 'rater' in col.lower()]
 
     if column_mappings:
-        print("Renaming columns", column_mappings)
+        mprint("- Renaming columns", column_mappings)
         data = data.rename(columns=column_mappings)
 
     if replace_values:
@@ -150,8 +223,6 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
 
     if 'language' not in data.columns:
         data['language'] = language
-    
-    print("Rater cols:", rater_cols)
 
     if drop_noresponse:
         data = data[~data.response.isna()]
@@ -169,6 +240,11 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
     if include_rater_std:
         data['rating_std'] = data[rater_cols].std(1)
 
+    # while normalize_values infers based on the average, we probably want to
+    # make that inference here based on the mix/max across the original ratings
+    if not range:
+        range = (data[rater_cols].min().min(), data[rater_cols].max().max())
+        mprint("- Inferred range of original data:", range)
     data['target'] = normalize_values(data.avg_rating, oldrange=range)
 
     missing = data.target.isna()
@@ -189,8 +265,10 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
                             "than uses; please explicitly supply a 'question' "
                             "column")
         uses = data.type == 'uses'
-        data.loc[uses, 'question'] = data.loc[uses, 'prompt'].apply(
-            lambda x: f"What is a surprising use for a {x.upper()}?")
+
+        def q_from_prompt(x):
+            return infer_question(x['prompt'], x['language'])
+        data.loc[uses, 'question'] = data[uses].apply(q_from_prompt, axis=1)
 
     def hashfunc(x):
         return hashlib.md5(x.encode('utf-8')).hexdigest()[:6]
@@ -203,7 +281,7 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
     if 'response_num' not in data.columns:
         data['response_num'] = None
     if print_stats:
-        simple_stats(data, rater_cols)
+        simple_stats(data, rater_cols, save_dir=save_dir, name=name)
 
     if return_full:
         final = data
@@ -241,7 +319,7 @@ def normalize_values(series, outrange=(1, 5), oldrange=None,
         oldmin, oldmax = oldrange
         # doublecheck
         warning_msg =("!!\n\nWARNING: DATA GOES {} THAN EXPECTED"
-                      "(you set:{}; data:{})."
+                      "(you set {}; data: {})."
                       "Ensure that you set the range you wanted.\n\n!!")
         if oldmin > series.min():
             print(warning_msg.format('LOWER', oldmin, series.min()))

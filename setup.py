@@ -5,7 +5,7 @@ setup(
     version='0.2',
     packages=find_packages(),
     install_requires=[
-        'pingouin', 'pandas', 'pyyaml', 'pyreadstat'
+        'pingouin', 'pandas', 'pyyaml', 'pyreadstat', 'duckdb'
     ],
     # metadata to display on PyPI
     author="Peter Organisciak",
