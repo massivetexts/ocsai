@@ -108,16 +108,18 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
                  print_stats=True, round_adjust=1,
                  null_marker=None, column_mappings=None,
                  replace_values=None,
-                 include_rater_std=False, overwrite_q=False,
+                 question_mappings=None,
+                 type_mappings=None,
+                 include_rater_std=True, overwrite_q=False,
                  meta=None, save_dir=None):
     '''General cleaning that repeats for multiple datasets.
 
     data: DataFrame with the following columns:
         - type (optional) - type of test. Assumes the value of 
-            the `test_type` parameter if there's no colum (default 
+            the `test_type` parameter if there's no column (default 
             'uses'). The values can be anything, but stay consistent.
             In Ocsai training, we use: ['uses', 'instances',
-            'consequences', 'completion']
+            'consequences', 'completion', 'metaphor']
         - participant - an identifier for the participant
         - prompt - a 'short' version of the prompt. For example:
             for a uses question like "What is a surprising use for 
@@ -175,10 +177,15 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
 
     column_mappings: A dictionary of column mappings. This is useful if the
         column names in the data don't match the expected column names.
-
+    
     replace_values: A dictionary of values to replace, with the key as the columns
         name, and the value as a dictionary of old:new replacement values. This is
-        done *after* column renaming, so use the new column names.
+        done *after* column renaming, so use the new column names, but done *before*
+        question_mappings and type_mappings.
+
+    question_mappings: A dictionary of prompt-to-question mappings.
+
+    type_mappings: A dictionary of prompt-to-type mappings.
 
     include_rater_std: If True, include a column for the standard deviation of
         rater scores. This can help identify items that are more difficult to
@@ -215,6 +222,16 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
             assert col in data.columns, f"Column {col} not found for replacement"
             data[col] = data[col].replace(values)
 
+    if question_mappings:
+        mprint("- Inferring questions", question_mappings)
+        data['question'] = data.prompt.replace(question_mappings)
+
+        assert set(question_mappings.keys()) == set(data.prompt.unique()), "There are prompts that don't have a question mapping"
+
+    if type_mappings:
+        mprint("- Inferring types", type_mappings)
+        data['type'] = data.prompt.replace(type_mappings)
+
     if null_marker:
         print(f"Replacing {null_marker} with NaN in response column")
         data.response = data.response.replace(null_marker, np.nan)
@@ -228,7 +245,11 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
         data = data[~data.response.isna()]
 
     data['src'] = name
+
+    # coerce rater cols to numeric
+    data[rater_cols] = data[rater_cols].apply(pd.to_numeric, errors='coerce')
     data['avg_rating'] = data[rater_cols].mean(1)
+    data['rater_count'] = data[rater_cols].notna().sum(1)
 
     if round_adjust:
         # add a tiny bit to avg rater to round in direction of median. Only
@@ -287,7 +308,8 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
         final = data
     else:
         cols = ['type', 'src', 'question', 'prompt', 'response', 'id',
-                'target', 'participant', 'response_num']
+                'target', 'participant', 'response_num', 'language',
+                'rater_count']
         if include_rater_std:
             cols += ['rating_std']
         final = data[cols]
@@ -299,6 +321,103 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
         filename = save_dir / f'{name}.csv'
         final.to_csv(filename, index=False)
     return final
+
+
+def combine_dupes(df):
+    '''
+    Combine all the rows of an input dataframe. 
+    Used for grouping duplicates. Expects the input DataFrame
+    to have the following columns:
+    - src: name for the source of the row
+    - response: the response text. Should be the 'same', approximately, 
+        but if using some other strategy for fuzzing matching, does not
+        need to be exact.
+    - target: the target score
+    - id: a unique identifier for the row
+    - participant: the participant identifier
+    
+
+    '''
+    # start with a dict of the first row
+    outdict = df.iloc[0].to_dict()
+
+    # assertions:
+    if 'prompt' in df.columns:
+        assert len(df.prompt.unique()) == 1, "Should only be one prompt"
+    if 'type' in df.columns:
+        assert len(df.type.unique()) == 1, "Should only be one type"
+    if 'language' in df.columns:
+        assert len(df.language.unique()) == 1, "Should only be one language"
+
+    # If there is only one row, keep it intact
+    if len(df) == 1:
+        outdict['participant_list'] = [outdict['participant']]
+        return pd.Series(outdict)
+    else:
+        # sort and concatenate all the unique src values
+        src = df.src.unique()
+        src = '/'.join(sorted(src))
+        outdict['src'] = src
+
+        # take the most common response from the group
+        outdict['response'] = df.response.value_counts().index[0]
+
+        # id: sort and concatenate all the unique id values and make into a unique hash
+        id = sorted(df.id.unique())
+        id = ''.join(id)
+        id = hashlib.md5(id.encode()).hexdigest()
+        outdict['id'] = id
+
+        # average of target, weighted by rater_count
+        outdict['target'] = np.average(df.target, weights=df.rater_count)
+        outdict['participant'] = f'COMBINED_{id}'
+        outdict['participant_list'] = df.participant.unique().tolist()
+        outdict['response_num'] = np.nan
+        if 'rater_count' in outdict:
+            outdict['rater_count'] = df.rater_count.sum()
+        else:
+            outdict['rater_count'] = len(df)
+
+        # Calculate combined standard deviation
+        # If rating_std is known for all values, calculate an approximation based on sum of squares
+        # (assuming the groups are independent and normally distributed)
+        # If rating_std is not known for all values, return a basic std based on the current rows.
+        if (('rating_std' in df.columns) 
+           and ('rater_count' in df.columns)
+           and (df.rating_std.isna().sum() == 0)):
+            sum_of_squares = df.apply(lambda row: (row.rater_count - 1) * row.rating_std**2, axis=1).sum()
+            outdict['rating_std'] = np.sqrt(sum_of_squares / (outdict['rater_count'] - len(df)))
+        else:
+            outdict['rating_std'] = df.target.std()
+        return pd.Series(outdict)
+
+
+def fingerprint_series(s, basic=False):
+    ''' Fingerprint responses for fuzzy deduplication.
+    Does *not* work well for chinese - there, run basic=True.
+
+    Follow the OpenRefine Strategy:
+
+    'remove leading and trailing whitespace
+    change all characters to their lowercase representation
+    remove all punctuation and control characters
+    normalize extended western characters to their ASCII representation (for example "gödel" → "godel")
+    split the string into whitespace-separated tokens
+    sort the tokens and remove duplicates
+    join the tokens back together'
+
+    https://openrefine.org/docs/technical-reference/clustering-in-depth
+    '''
+    import re
+    import unicodedata
+    from unidecode import unidecode
+    s = s.str.lower()
+    s = s.str.replace(r'[^\w\s]', '', regex=True)
+    if basic:
+        return s
+    s = s.apply(lambda x: unidecode(x))
+    s = s.apply(lambda x: ' '.join(sorted(x.split())))
+    return s
 
 
 def normalize_values(series, outrange=(1, 5), oldrange=None,
