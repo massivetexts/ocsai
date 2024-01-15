@@ -317,6 +317,7 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
                  language='eng', range=None, return_full=False,
                  aggregate_scores=True, drop_noresponse=True,
                  print_stats=True, round_adjust=1,
+                 round_precision=None,
                  null_marker=None, column_mappings=None,
                  replace_values=None,
                  question_mappings=None,
@@ -383,6 +384,8 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
         the median. Only need if there are tiebreakers. This is different from
         the round_precision parameter in normalize_values, which rounds the
         scores in a *random* direction.
+
+    round_precision: If an integer, round the scores to this precision.
 
     null_marker: If provided, replace this value with NaN.
 
@@ -459,7 +462,23 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
 
     # coerce rater cols to numeric
     data[rater_cols] = data[rater_cols].apply(pd.to_numeric, errors='coerce')
-    data['avg_rating'] = data[rater_cols].mean(1)
+
+    # while normalize_values infers based on the average, we probably want to
+    # make that inference here based on the mix/max across the original ratings
+    if not range:
+        range = (data[rater_cols].min().min(), data[rater_cols].max().max())
+        mprint("- Inferred range of original data:", range)
+    
+    # replace anything below or above the range with na
+    for col in rater_cols:
+        clipped_col = data[col].apply(lambda x: x if range[0] <= x <= range[1] else np.nan)
+        # if there are any clipped values, print a warning
+        if clipped_col.isna().sum() > data[col].isna().sum():
+            mprint(f"WARNING: {clipped_col.isna().sum()} out-of-range values clipped from {col}")
+        data[col] = clipped_col
+    
+    data['avg_rating'] = data[rater_cols].mean(1, numeric_only=True, skipna=True)
+    # count all values that are numeric, per row of data[rater_cols]
     data['rater_count'] = data[rater_cols].notna().sum(1)
 
     if round_adjust:
@@ -470,14 +489,10 @@ def prep_general(data, name, rater_cols=None, test_type='uses',
                               (data.median_rating - data.avg_rating).div(10**3)
                               )
     if include_rater_std:
-        data['rating_std'] = data[rater_cols].std(1)
+        data['rating_std'] = data[rater_cols].std(1, numeric_only=True, skipna=True)
 
-    # while normalize_values infers based on the average, we probably want to
-    # make that inference here based on the mix/max across the original ratings
-    if not range:
-        range = (data[rater_cols].min().min(), data[rater_cols].max().max())
-        mprint("- Inferred range of original data:", range)
-    data['target'] = normalize_values(data.avg_rating, oldrange=range)
+    data['target'] = normalize_values(data.avg_rating, oldrange=range,
+                                      round_precision=round_precision)
 
     missing = data.target.isna()
     if missing.sum():
@@ -632,7 +647,7 @@ def fingerprint_series(s, basic=False):
 
 
 def normalize_values(series, outrange=(1, 5), oldrange=None,
-                     round_precision=False):
+                     round_precision=None):
     '''
     Normalize the range of score values to a standard scale.
 
@@ -641,7 +656,7 @@ def normalize_values(series, outrange=(1, 5), oldrange=None,
     oldrange: tuple of min and max of the old range. If not provided, this
     will use the min and max of the data.
 
-    round_precision: integer of the rounding precision. If False, no rounding
+    round_precision: integer of the rounding precision. If None, no rounding
         will occur.
     '''
     min, max = outrange
