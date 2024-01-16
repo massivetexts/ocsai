@@ -38,7 +38,7 @@ class GPT_Classic_Scorer(GPT_Base_Scorer):
             n=1,
             logprobs=None,
             stop='\n',
-            max_tokens=3
+            max_tokens=2
         )
         if just_final:
             return [choice.text for choice in response.choices]

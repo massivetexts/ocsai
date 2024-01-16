@@ -68,29 +68,33 @@ def upgrade_cache(cache_path, chunksize=10000, raise_on_error=True):
 
         # float types
         for col in ['score', 'confidence']:
-            df[col] = pd.to_numeric(df[col], errors='raise')
-        
+            df[col] = pd.to_numeric(df[col], errors='ignore')
+
         # check if data collector is none
         if data_collector is None:
             data_collector = df
         else:
             data_collector = pd.concat([data_collector, df])
 
+        # DROP WHERE SCORE IS NULL
+        data_collector = data_collector.dropna(subset=['score'])
+
         # if data collector is bigger than chunk size, write
         # chunk_size number of rows to a file, and truncate them
         # from the data collector. This is done incrementally, to
         # avoid memory issues.
-        while len(data_collector) > chunksize:
-            chunk = data_collector.head(chunksize)
-            data_collector = data_collector.iloc[chunksize:]
-            ts = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
-            fname = cache_path / f'results.{ts}.{chunk_n}.parquet'
-            chunk.to_parquet(fname)
-            all_new_files.append(fname)
-            chunk_n += 1
+        if data_collector:
+            while len(data_collector) > chunksize:
+                chunk = data_collector.head(chunksize)
+                data_collector = data_collector.iloc[chunksize:]
+                ts = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
+                fname = cache_path / f'results.{ts}.{chunk_n}.parquet'
+                chunk.to_parquet(fname)
+                all_new_files.append(fname)
+                chunk_n += 1
 
     # Write the final chunk to a file
-    if len(data_collector) > 0:
+    if data_collector and len(data_collector) > 0:
         ts = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
         fname = cache_path / f'results.{ts}.{chunk_n}.parquet'
         data_collector.to_parquet(fname)
@@ -124,8 +128,16 @@ def upgrade_cache(cache_path, chunksize=10000, raise_on_error=True):
         print("Something went wrong with optimization, deleting *new* files")
         print("len(original_ids):", len(original_ids), "len(new_ids): ", len(new_ids))
         print("Example mismatches (og<->new):", [(x,y) for (x,y) in list(zip(original_ids, new_ids)) if x != y][:10])
-        [f.unlink() for f in all_new_files]
+        for f in all_new_files:
+            try:
+                f.unlink()
+            except FileNotFoundError:
+                print("File not found for unlinking:", f)
         if raise_on_error:
             raise
     print("All ids preserved, deleting old files")
-    [f.unlink() for f in cache_files]
+    for f in cache_files:
+        try:
+            f.unlink()
+        except FileNotFoundError:
+            print("File not found for unlinking:", f)
