@@ -13,7 +13,7 @@ import numpy as np
 
 class GPT_Base_Scorer:
     def __init__(self, openai_key_path=False, model_dict=None,
-                 cache=False, logger=None):
+                 cache=None, logger=None, prompter=None):
         self.logger = logger
         if not self.logger:
             self.logger = logging.getLogger(__name__)
@@ -33,37 +33,41 @@ class GPT_Base_Scorer:
         if cache:
             self.cache_path = Path(cache)
             self.cache_path.mkdir(parents=True, exist_ok=True)
+        
+        # ensure that subclasses set the prompter
+        self.prompter = prompter
+        assert self.prompter is not None
 
-    def originality(self, target, response, question=None, 
+    def originality(self, target, response, question=None,
                     task_type='uses', language='eng',
                     model='first', raise_errs=False, **kwargs):
+        '''Get originality score'''
+        response_dict = self.score(target, response, question=question,
+                                   task_type=task_type, language=language,
+                                   model=model, raise_errs=raise_errs, **kwargs)
+        return response_dict['score']
+
+    def score(self, target, response, question=None,
+              task_type='uses', language='eng',
+              model='first', raise_errs=False, **kwargs):
+        '''Get full score information: originality, flags, and confidence'''
         if model == 'first':
             model = self.models[0]
-        gptprompt = self._craft_gptprompt(target, response, question=question,
-                                          task_type=task_type, language=language)
-        score_raw = self._score_gpt(gptprompt, model=model, just_final=True)[0]
+        prompt_str = self.prompter.craft_prompt(target, response, question=question,
+                                                task_type=task_type, language=language)
+        score_raw = self._score_gpt(prompt_str, model=model, just_final=True)[0]
         try:
-            response_dict = self._parse_response(score_raw)
-            score = response_dict['score']
+            response_dict = self.prompter.parse_response(score_raw)
         except:
             if raise_errs:
-                print(f"GPT prompt: {gptprompt.strip()}")
-                print(f"raw response: {score_raw}")
+                self.logger.exception(f"GPT prompt:{prompt_str.strip()}\nraw response:{score_raw}")
                 raise
-            return None
-        return score
+            return {'score': None, 'confidence': None, 'flags': None}
+        return response_dict
 
     def add_model(self, name, finetunepath):
         self.models[name] = finetunepath
 
-    def _parse_response(self, score_raw):
-        '''Parse the raw response from the language model. Implement in subclass.'''
-        raise NotImplementedError
-    
-    def _craft_gptprompt(self, item, response, question=None,
-                         task_type='uses', language='eng'):
-        raise NotImplementedError
-    
     def _score_gpt(self, gptprompt, model='first', just_final=False):
         raise NotImplementedError
 
@@ -99,7 +103,6 @@ class GPT_Base_Scorer:
                 cache_results = pd.DataFrame([], columns=base_cols+['score', 'timestamp'])
                 cache_results = df.merge(cache_results, how='left', on=base_cols)
             else:
-                # TODO update old cache cache to include 'uses/eng' for everything
                 # Using IS NOT DISTINCT FROM to handle nulls
                 col_match_sql = " AND ".join([f"df.{x} IS NOT DISTINCT FROM cache.{x}" for x in base_cols])
                 cache_results = duckdb.query(f"SELECT df.*, cache.score, cache.confidence, cache.flags, cache.timestamp FROM df LEFT JOIN '{self.cache_path}/*.parquet' cache ON {col_match_sql}").to_df()
@@ -119,13 +122,13 @@ class GPT_Base_Scorer:
             targetbatch = prompts[i*batch_size:(i+1)*batch_size]
             responsebatch = responses[i*batch_size:(i+1)*batch_size]
 
-            gptprompts = [self._craft_gptprompt(target, response) for target, response in zip(targetbatch, responsebatch)]
+            gptprompts = [self.prompter.craft_prompt(target, response) for target, response in zip(targetbatch, responsebatch)]
             scores_raw = self._score_gpt(gptprompts, model=model, just_final=True)
 
             for i, score_raw in enumerate(scores_raw):
                 score, confidence, flags = None, None, None
                 try:
-                    response_dict = self._parse_response(score_raw)
+                    response_dict = self.prompter.parse_response(score_raw)
                     score = response_dict['score']
                     confidence = response_dict['confidence']
                     flags = response_dict['flags']
@@ -156,14 +159,14 @@ class GPT_Base_Scorer:
             final = []
             for s, c, f, r in zip(scores, confidences, allflags, responses):
                 # force 1 on blank response
-                if r.strip() != '':
+                if r.strip() == '':
                     s = 1
-                if np.isnan(c):
+                if c is None or np.isnan(c):
                     c = None
-                if np.isnan(f):
+                if f is None or np.isnan(f):
                     f = None
                 final.append({"score": s,"confidence": c,"flags": f})
-            return scores
+            return final
 
     def originality_df(self, dataframe,
                    model='first',
@@ -211,7 +214,7 @@ class GPT_Base_Scorer:
         # ensure that newcolnames are not already in dataframe
         if not force_overwrite:
             for newcolname in newcolnames:
-                if newcolname in dataframe.columns:
+                if newcolname in outdf.columns:
                     raise Exception(f"Column name {newcolname} already exists in dataframe. Try setting a difference name")
         outdf[newcolnames] = scores_df.values
         return outdf

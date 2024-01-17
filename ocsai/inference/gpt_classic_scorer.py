@@ -1,3 +1,4 @@
+from ..train.prompts import GPT_Classic_Prompter
 from .gpt_base_scorer import GPT_Base_Scorer
 
 
@@ -10,22 +11,9 @@ class GPT_Classic_Scorer(GPT_Base_Scorer):
     def __init__(self, *args, **kwargs):
         if 'model_dict' not in kwargs or not kwargs['model_dict']:
             kwargs['model_dict'] = GPTCLASSICMODELS
+        if 'prompter' not in kwargs or not kwargs['prompter']:
+            kwargs['prompter'] = GPT_Classic_Prompter()
         super().__init__(*args, **kwargs)
-
-    def _craft_gptprompt(self, item, response, task_type='uses', question=None, language='eng'):
-        # prompt templates should take 2 args - item and response
-        if task_type == 'uses':
-            prompt_template = "AUT Prompt:{}\nResponse:{}\nScore:\n"
-        else:
-            self.logger.warning("Only 'uses' task type is supported with Classic Scorer")
-        
-        if question:
-            self.logger.warning("Question is not supported with Classic Scorer")
-        if language != 'eng':
-            self.logger.warning("Only 'eng' language is supported with Classic Scorer")
-        
-        # This is format of trained models in Organisciak, Acar, Dumas, and Berthiaume
-        return prompt_template.format(item, response)
 
     def _score_gpt(self, gptprompt, model='first', just_final=False):
         # gptprompt is the templated item+response. Use _craft_gptprompt. It can be a list of prompts.
@@ -38,13 +26,11 @@ class GPT_Classic_Scorer(GPT_Base_Scorer):
             n=1,
             logprobs=None,
             stop='\n',
-            max_tokens=2
+            # since the prompter knows the format, use it's recommendation
+            # for max tokens
+            max_tokens=self.prompter.max_tokens
         )
         if just_final:
             return [choice.text for choice in response.choices]
         else:
             return response
-
-    def _parse_response(self, score_raw):
-        score = int(score_raw) / 10
-        return dict(score=score, confidence=None, flags=None)
