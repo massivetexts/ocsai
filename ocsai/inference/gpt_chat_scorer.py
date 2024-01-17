@@ -1,5 +1,5 @@
 from .gpt_base_scorer import GPT_Base_Scorer
-from ..train.prompts import GPT_Classic_Chat_Prompter
+from ..train import GPT_Classic_Chat_Prompter
 from tqdm.auto import tqdm
 import pandas as pd
 

@@ -1,122 +1,18 @@
+from .llm_base_prompter import LLM_Base_Prompter
 import random
-from typing import Optional
 import numpy as np
 import re
 import pandas as pd
-import logging
 
-
-class LLM_Base_Prompter():
-    sys_msg_text: Optional[str] = None
-    max_tokens: int = 100
-
-    def __init__(self, logger=None):
-        self.logger = logger
-        if not self.logger:
-            self.logger = logging.getLogger(__name__)
-            self.logger.setLevel(logging.INFO)
-
-    def craft_prompt(self, item, response, task_type='uses', question=None, language='eng'):
-        '''Craft a prompt for the language model, given an item, response, and task type'''
-        raise NotImplementedError
-
-    def craft_response(self, score, confidence=None, flags=None):
-        '''Craft a response for the language model, given a score, confidence, and flags'''
-        raise NotImplementedError
-
-    def parse_response(self, score_raw):
-        '''Parse the raw response from the language model into a dict of 
-            {score, confidence, and flags}'''
-        raise NotImplementedError
-
-    def prepare_example(self, item, response, task_type='uses', question=None,
-                        language=None, target=None, confidence=None, seed=None):
-        '''Prepare an example for training. Not needed for inference.'''
-        pass
-
-
-class GPT_Classic_Prompter(LLM_Base_Prompter):
-    ''' The format used in the original LLM paper, Organisciak et al. 2023'''
-    max_tokens: int = 2
-
-    def craft_prompt(self, item, response, task_type='uses', question=None, language='eng'):
-        # prompt templates should take 2 args - item and response
-        if task_type == 'uses':
-            prompt_template = "AUT Prompt:{}\nResponse:{}\nScore:\n"
-        else:
-            self.logger.warning("Only 'uses' task type is supported with Classic Prompter")
-
-        if question:
-            self.logger.warning("Question is not supported with Classic Prompter")
-        if language is not None and language != 'eng':
-            self.logger.warning("Only 'eng' language is supported with Classic Prompter")
-
-        # This is format of trained models in Organisciak, Acar, Dumas, and Berthiaume
-        return prompt_template.format(item, response)
-
-    def craft_response(self, score, confidence=None, flags=None):
-        '''
-        Just a number
-        '''
-        if confidence is not None:
-            self.logger.warning("Confidence is not supported with Classic Prompter")
-
-        if flags is not None:
-            self.logger.warning("Flags are not supported with Classic Prompter")
-
-        return f'{int(score*10)}'
-
-    def parse_response(self, score_raw):
-        score = int(score_raw) / 10
-        return dict(score=score, confidence=None, flags=None)
-
-    def prepare_example(self, item, response, task_type='uses', question=None,
-                        language=None, target=None, confidence=None, seed=None):
-        ''' Example of format:
-
-        ```
-        {"prompt":"AUT Prompt:brick\nResponse:use as a stepping stool to get up higher\nScore:\n",
-        "completion":"17"}
-        ```
-        '''
-        return {"prompt": self.craft_prompt(item, response, task_type, question, language),
-                "completion": self.craft_response(target, confidence)}
-
-
-class GPT_Classic_Chat_Prompter(GPT_Classic_Prompter):
-    ''' The format used in the original LLM paper, adjusted slightly to work with chat.'''
-    sys_msg_text = "You score originality in the alternate uses task."
-    max_tokens = 25
-
-    def craft_prompt(self, item, response, task_type='uses', question=None, language='eng'):
-        ''' Remove "\nScore:\n" from the legacy format.'''
-        prompt = super().craft_prompt(item, response, task_type, question, language)
-        return prompt.replace("\nScore:\n", "")
-
-    def prepare_example(self, item, response, task_type='uses', question=None,
-                        language=None, target=None, confidence=None, seed=None):
-        prompt = self.craft_prompt(item, response, task_type, question, language)
-        msgs = [
-            {"role": "system", "content": self.sys_msg_text},
-            {"role": "user", "content": prompt},
-            ]
-        # Add the response
-        if target:
-            ast_msg = {
-                "role": "assistant",
-                "content": self.craft_response(target, confidence)
-            }
-            msgs.append(ast_msg)
-        return msgs
 
 class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
     ''' The new format, introduced with Ocsai 1.5.'''
     sys_msg_text = "You are a creativity judge, scoring tests of originality."
 
     def craft_prompt(self, item, response, task_type='uses', question=None, language='eng', seed=None,
-                    action_exclude_prob=0, task_type_exclude_prob=0, prompt_exclude_prob=0,
-                    language_exclude_prob=0, question_exclude_prob=0, detail_exclude_prob=0,
-                    no_flags=False):
+                     action_exclude_prob=0, task_type_exclude_prob=0, prompt_exclude_prob=0,
+                     language_exclude_prob=0, question_exclude_prob=0, detail_exclude_prob=0,
+                     no_flags=False):
         # Initialize the random number generator with the provided seed
         # no_flags exluded the FLAGS part of the prompt altogether
         if seed is not None:
