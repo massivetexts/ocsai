@@ -1,4 +1,4 @@
-from ..train.prompts import GPT_Classic_Prompter
+from ..train import GPT_Classic_Prompter
 from .gpt_base_scorer import GPT_Base_Scorer
 
 

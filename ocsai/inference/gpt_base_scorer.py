@@ -160,6 +160,7 @@ class GPT_Base_Scorer:
             for s, c, f, r in zip(scores, confidences, allflags, responses):
                 # force 1 on blank response
                 if r.strip() == '':
+                    logging.debug("Blank response detected. Forcing score to 1.")
                     s = 1
                 if c is None or np.isnan(c):
                     c = None
