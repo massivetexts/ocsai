@@ -54,7 +54,7 @@ def upgrade_cache(cache_path, chunksize=10000, raise_on_error=True):
         defaults = {
             'confidence': np.nan,
             'question': None,
-            'flags': [],
+            'flags': None,
             'language': 'eng',
             'type': 'uses'
         }
@@ -83,7 +83,7 @@ def upgrade_cache(cache_path, chunksize=10000, raise_on_error=True):
         # chunk_size number of rows to a file, and truncate them
         # from the data collector. This is done incrementally, to
         # avoid memory issues.
-        if data_collector:
+        if data_collector is not None:
             while len(data_collector) > chunksize:
                 chunk = data_collector.head(chunksize)
                 data_collector = data_collector.iloc[chunksize:]
@@ -94,7 +94,7 @@ def upgrade_cache(cache_path, chunksize=10000, raise_on_error=True):
                 chunk_n += 1
 
     # Write the final chunk to a file
-    if data_collector and len(data_collector) > 0:
+    if data_collector is not None and len(data_collector) > 0:
         ts = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
         fname = cache_path / f'results.{ts}.{chunk_n}.parquet'
         data_collector.to_parquet(fname)
