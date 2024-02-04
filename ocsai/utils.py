@@ -30,7 +30,7 @@ def mprint(*messages):
         print(full_message)
 
 
-def upgrade_cache(cache_path, chunksize=10000, raise_on_error=True):
+def upgrade_cache(cache_path, chunksize=1000000, raise_on_error=True):
     import pandas as pd
     import numpy as np
     from tqdm import tqdm
@@ -44,61 +44,72 @@ def upgrade_cache(cache_path, chunksize=10000, raise_on_error=True):
     cache_files = list(cache_path.glob('*.parquet'))
     data_collector = None
 
-    all_new_files = []
-    chunk_n = 0
-    for cache_file in tqdm(cache_files):
-        df = pd.read_parquet(cache_file)
-        # drop rows where score is null or none or na
-        df = df.dropna(subset=['score'])
+    try:
+        all_new_files = []
+        chunk_n = 0
+        for cache_file in tqdm(cache_files):
+            df = pd.read_parquet(cache_file)
+            # drop rows where score is null or none or na
+            df = df.dropna(subset=['score'])
 
-        defaults = {
-            'confidence': np.nan,
-            'question': None,
-            'flags': [],
-            'language': 'eng',
-            'type': 'uses'
-        }
-        for col, default in defaults.items():
-            if col not in df.columns:
-                df[col] = default
+            defaults = {
+                'confidence': np.nan,
+                'question': None,
+                'flags': [],
+                'language': 'eng',
+                'type': 'uses'
+            }
+            for col, default in defaults.items():
+                if col not in df.columns:
+                    df[col] = default
 
-        # object types
-        for col in ['prompt', 'response', 'question', 'type', 'language', 'model']:
-            df[col] = df[col].astype('object')
+            # object types
+            for col in ['prompt', 'response', 'question', 'type', 'language', 'model']:
+                df[col] = df[col].astype('object')
 
-        # float types
-        for col in ['score', 'confidence']:
-            df[col] = pd.to_numeric(df[col], errors='ignore')
+            # float types
+            for col in ['score', 'confidence']:
+                df[col] = pd.to_numeric(df[col], errors='ignore')
 
-        # check if data collector is none
-        if data_collector is None:
-            data_collector = df
-        else:
-            data_collector = pd.concat([data_collector, df])
+            # check if data collector is none
+            if data_collector is None:
+                data_collector = df
+            else:
+                data_collector = pd.concat([data_collector, df])
 
-        # DROP WHERE SCORE IS NULL
-        data_collector = data_collector.dropna(subset=['score'])
+            # DROP WHERE SCORE IS NULL
+            data_collector = data_collector.dropna(subset=['score'])
 
-        # if data collector is bigger than chunk size, write
-        # chunk_size number of rows to a file, and truncate them
-        # from the data collector. This is done incrementally, to
-        # avoid memory issues.
-        if data_collector:
-            while len(data_collector) > chunksize:
-                chunk = data_collector.head(chunksize)
-                data_collector = data_collector.iloc[chunksize:]
-                ts = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
-                fname = cache_path / f'results.{ts}.{chunk_n}.parquet'
-                chunk.to_parquet(fname)
-                all_new_files.append(fname)
-                chunk_n += 1
-
-    # Write the final chunk to a file
-    if data_collector and len(data_collector) > 0:
-        ts = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
-        fname = cache_path / f'results.{ts}.{chunk_n}.parquet'
-        data_collector.to_parquet(fname)
-        all_new_files.append(fname)
+            # if data collector is bigger than chunk size, write
+            # chunk_size number of rows to a file, and truncate them
+            # from the data collector. This is done incrementally, to
+            # avoid memory issues.
+            if not data_collector.empty:
+                while len(data_collector) > chunksize:
+                    chunk = data_collector.head(chunksize)
+                    data_collector = data_collector.iloc[chunksize:]
+                    ts = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
+                    fname = cache_path / f'results.{ts}.{chunk_n}.parquet'
+                    chunk.to_parquet(fname)
+                    all_new_files.append(fname)
+                    chunk_n += 1
+        
+        # Write the final chunk to a file
+        if not data_collector.empty and len(data_collector) > 0:
+            ts = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
+            fname = cache_path / f'results.{ts}.{chunk_n}.parquet'
+            data_collector.to_parquet(fname)
+            all_new_files.append(fname)
+    
+    except KeyboardInterrupt:
+        print("KeyboardInterrupt, cleaning up")
+        for f in all_new_files:
+            try:
+                f.unlink()
+            except FileNotFoundError:
+                print("File not found for unlinking:", f)
+        if raise_on_error:
+            raise
 
     # CHECK THAT NO DATA IS LOST
     original_ids = []
