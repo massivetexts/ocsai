@@ -1,6 +1,7 @@
 from typing import Optional
 import logging
 
+
 class LLM_Base_Prompter():
     sys_msg_text: Optional[str] = None
     max_tokens: int = 100
