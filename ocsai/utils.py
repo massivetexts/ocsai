@@ -9,7 +9,7 @@ def can_render_md_html():
 
         # Check if the environment is a Jupyter notebook
         # This is a heuristic check and may not be foolproof
-        if 'zmqshell' in str(type(ipython)):
+        if "zmqshell" in str(type(ipython)):
             return True
         else:
             return False
@@ -17,20 +17,39 @@ def can_render_md_html():
     except ImportError:
         # IPython is not installed
         return False
- 
+
 
 def mprint(*messages):
-    '''If renderable, print as markdown; else print as text.'''
-    full_message = ' '.join(str(message) for message in messages)
+    """If renderable, print as markdown; else print as text."""
+    full_message = " ".join(str(message) for message in messages)
     renderable = can_render_md_html()
     if renderable:
         from IPython.display import Markdown, display
+
         display(Markdown(full_message))
     else:
         print(full_message)
 
 
-def upgrade_cache(cache_path, chunksize=1000000, raise_on_error=True):
+def fingerprint_df(
+    df, base_cols=["prompt", "response", "question", "type", "language", "model"]
+):
+    import hashlib
+
+    return (
+        df[base_cols]
+        .astype(str)
+        .apply(lambda x: hashlib.md5("".join(x).encode()).hexdigest(), axis=1)
+        .tolist()
+    )
+
+
+def upgrade_cache(
+    cache_path,
+    chunksize=1000000,
+    base_cols=["prompt", "response", "question", "type", "language", "model"],
+    raise_on_error=True,
+):
     import pandas as pd
     import numpy as np
     from tqdm import tqdm
@@ -41,8 +60,9 @@ def upgrade_cache(cache_path, chunksize=1000000, raise_on_error=True):
     # a new sharded parquet file.
 
     cache_path = Path(cache_path)
-    cache_files = list(cache_path.glob('*.parquet'))
+    cache_files = list(cache_path.glob("*.parquet"))
     data_collector = None
+    all_hashes = set()
 
     try:
         all_new_files = []
@@ -50,26 +70,36 @@ def upgrade_cache(cache_path, chunksize=1000000, raise_on_error=True):
         for cache_file in tqdm(cache_files):
             df = pd.read_parquet(cache_file)
             # drop rows where score is null or none or na
-            df = df.dropna(subset=['score'])
+            df = df.dropna(subset=["score"])
+            # fingerprint the dataframe and remove any hashes that are already in all_hashes
+            hashes = fingerprint_df(df, [c for c in base_cols if c in df.columns])
+            hashes = [h in all_hashes for h in hashes]
+            hashes_to_drop = sum(hashes)
+            if hashes_to_drop > 0:
+                print(
+                    f"Found {hashes_to_drop} hashes already in all_hashes, dropping them"
+                )
+                df = df[~hashes]
+            all_hashes.update(hashes)
 
             defaults = {
-                'confidence': np.nan,
-                'question': None,
-                'flags': None,
-                'language': 'eng',
-                'type': 'uses'
+                "confidence": np.nan,
+                "question": None,
+                "flags": None,
+                "language": "eng",
+                "type": "uses",
             }
             for col, default in defaults.items():
                 if col not in df.columns:
                     df[col] = default
 
             # object types
-            for col in ['prompt', 'response', 'question', 'type', 'language', 'model']:
-                df[col] = df[col].astype('object')
+            for col in ["prompt", "response", "question", "type", "language", "model"]:
+                df[col] = df[col].astype("object")
 
             # float types
-            for col in ['score', 'confidence']:
-                df[col] = pd.to_numeric(df[col], errors='ignore')
+            for col in ["score", "confidence"]:
+                df[col] = pd.to_numeric(df[col], errors="ignore")
 
             # check if data collector is none
             if data_collector is None:
@@ -78,7 +108,10 @@ def upgrade_cache(cache_path, chunksize=1000000, raise_on_error=True):
                 data_collector = pd.concat([data_collector, df])
 
             # DROP WHERE SCORE IS NULL
-            data_collector = data_collector.dropna(subset=['score'])
+            data_collector = data_collector.dropna(subset=["score"])
+
+            # Drop duplicates, based on the base columns
+            data_collector = data_collector.drop_duplicates(subset=base_cols)
 
             # if data collector is bigger than chunk size, write
             # chunk_size number of rows to a file, and truncate them
@@ -88,19 +121,19 @@ def upgrade_cache(cache_path, chunksize=1000000, raise_on_error=True):
                 while len(data_collector) > chunksize:
                     chunk = data_collector.head(chunksize)
                     data_collector = data_collector.iloc[chunksize:]
-                    ts = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
-                    fname = cache_path / f'results.{ts}.{chunk_n}.parquet'
+                    ts = pd.Timestamp.now().strftime("%Y%m%d%H%M%S")
+                    fname = cache_path / f"results.{ts}.{chunk_n}.parquet"
                     chunk.to_parquet(fname)
                     all_new_files.append(fname)
                     chunk_n += 1
-        
+
         # Write the final chunk to a file
         if data_collector is not None and len(data_collector) > 0:
-            ts = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
-            fname = cache_path / f'results.{ts}.{chunk_n}.parquet'
+            ts = pd.Timestamp.now().strftime("%Y%m%d%H%M%S")
+            fname = cache_path / f"results.{ts}.{chunk_n}.parquet"
             data_collector.to_parquet(fname)
             all_new_files.append(fname)
-    
+
     except KeyboardInterrupt:
         print("KeyboardInterrupt, cleaning up")
         for f in all_new_files:
@@ -110,27 +143,23 @@ def upgrade_cache(cache_path, chunksize=1000000, raise_on_error=True):
                 print("File not found for unlinking:", f)
         if raise_on_error:
             raise
->>>>>>> 95263f164d6011524411070c9bc363d149f372c9
 
     # CHECK THAT NO DATA IS LOST
     original_ids = []
-    for cache_file in tqdm(cache_files, desc='checking ids on old files'):
-        df = pd.read_parquet(cache_file).dropna(subset=['score'])
-        
-        ids = (df['prompt'].astype(str) +
-               df['response'].astype(str) +
-               df['score'].astype(str)
-               ).tolist()
+    for cache_file in tqdm(cache_files, desc="checking ids on old files"):
+        df = pd.read_parquet(cache_file).dropna(subset=["score"])
+
+        ids = fingerprint_df(df, base_cols)
         original_ids.extend(ids)
+    original_ids = set(original_ids)
 
     new_ids = []
-    for cache_file in tqdm(all_new_files, desc='checking ids on new files'):
+    for cache_file in tqdm(all_new_files, desc="checking ids on new files"):
         df = pd.read_parquet(cache_file)
-        ids = (df['prompt'].astype(str) +
-               df['response'].astype(str) +
-               df['score'].astype(str)
-              ).tolist()
+        ids = fingerprint_df(df, base_cols)
         new_ids.extend(ids)
+    new_ids = set(new_ids)
+
     print("Checking that all ids are preserved")
     print(f"Original ids: {len(original_ids)}")
     print(f"New ids: {len(new_ids)}")
@@ -139,7 +168,10 @@ def upgrade_cache(cache_path, chunksize=1000000, raise_on_error=True):
     except AssertionError:
         print("Something went wrong with optimization, deleting *new* files")
         print("len(original_ids):", len(original_ids), "len(new_ids): ", len(new_ids))
-        print("Example mismatches (og<->new):", [(x,y) for (x,y) in list(zip(original_ids, new_ids)) if x != y][:10])
+        print(
+            "Example mismatches (og<->new):",
+            [(x, y) for (x, y) in list(zip(original_ids, new_ids)) if x != y][:10],
+        )
         for f in all_new_files:
             try:
                 f.unlink()
