@@ -8,7 +8,8 @@ import os
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from ..cache import Ocsai_Parquet_Cache
+
+from ..cache import Ocsai_Cache, Ocsai_Parquet_Cache
 
 
 class GPT_Base_Scorer:
@@ -36,8 +37,8 @@ class GPT_Base_Scorer:
             # if cache is string or Path, initialize parquet cache
             if isinstance(cache, str) or isinstance(cache, Path):
                 self.cache = Ocsai_Parquet_Cache(cache_path=Path(cache))
-        elif cache and isinstance(cache, Ocsai_Parquet_Cache):
-            self.cache = cache
+            if isinstance(cache, Ocsai_Cache):
+                self.cache = cache
 
         # ensure that subclasses set the prompter
         self.prompter = prompter
@@ -177,7 +178,7 @@ class GPT_Base_Scorer:
             newly_scored["confidence"] = confidences
             newly_scored["flags"] = allflags
             newly_scored["timestamp"] = time.time()
-            self.cache.write(newly_scored, 50000)
+            self.cache.write(newly_scored, 0)
 
             right = pd.concat([cache_results, newly_scored])
             self.logger.debug(

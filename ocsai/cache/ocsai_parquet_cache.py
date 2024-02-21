@@ -79,15 +79,14 @@ class Ocsai_Parquet_Cache(Ocsai_Cache):
 
         If smaller than min_size_to_write, it will save the cache in-memory
         """
-        print('writing to cache')
+        
         if df.empty:
             return
 
         # append in-memory cache
         if len(self.in_memory_cache) > 0:
             total_cache = pd.concat([self.in_memory_cache, df]).drop_duplicates(self.base_cols)
-            print("Keeping in-memory. Total cache size:", len(total_cache))
-            print(total_cache.tail())
+            self.logger.info("Writing to in-memory cache. Total cache size:", len(total_cache))
         else:
             total_cache = df
 
