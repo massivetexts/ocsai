@@ -178,7 +178,8 @@ class GPT_Base_Scorer:
             newly_scored["confidence"] = confidences
             newly_scored["flags"] = allflags
             newly_scored["timestamp"] = time.time()
-            self.cache.write(newly_scored, 0)
+            min_size_to_write_cache = 1000
+            self.cache.write(newly_scored, min_size_to_write_cache)
 
             right = pd.concat([cache_results, newly_scored])
             self.logger.debug(
