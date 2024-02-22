@@ -112,7 +112,7 @@ class GPT_Base_Scorer:
         languages="eng",
         model="first",
         raise_errs=False,
-        batch_size=500,
+        batch_size=20,
         debug=False,
         **kwargs,
     ):
@@ -178,7 +178,7 @@ class GPT_Base_Scorer:
             newly_scored["confidence"] = confidences
             newly_scored["flags"] = allflags
             newly_scored["timestamp"] = time.time()
-            min_size_to_write_cache = 1000
+            min_size_to_write_cache = 100
             self.cache.write(newly_scored, min_size_to_write_cache)
 
             right = pd.concat([cache_results, newly_scored])
@@ -209,7 +209,7 @@ class GPT_Base_Scorer:
         dataframe,
         model="first",
         raise_errs=False,
-        batch_size=500,
+        batch_size=20,
         prompt_col="prompt",
         response_col="response",
         question_col="question",
