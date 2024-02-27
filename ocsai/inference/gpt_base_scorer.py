@@ -1,15 +1,13 @@
-import getpass
 from typing import Union
 import openai
 from tqdm.auto import tqdm
 import time
 import logging
-import os
 import pandas as pd
 import numpy as np
 from pathlib import Path
-
 from ..cache import Ocsai_Cache, Ocsai_Parquet_Cache
+import asyncio
 
 
 class GPT_Base_Scorer:
@@ -27,10 +25,10 @@ class GPT_Base_Scorer:
             self.logger.setLevel(logging.INFO)
 
         self._models = model_dict
-        if openai_key_path:
-            self.client = openai.OpenAI(api_key=openai.api_key)
-        else:
-            self.client = openai.OpenAI()
+        self.client = openai.OpenAI(api_key=openai.api_key)
+        self.async_client = openai.AsyncOpenAI(api_key=openai.api_key)
+        max_async_processes = 10
+        self.async_semaphore = asyncio.Semaphore(max_async_processes)
 
         self.cache = None
         if cache:
@@ -101,6 +99,9 @@ class GPT_Base_Scorer:
         self.models[name] = finetunepath
 
     def _score_gpt(self, gptprompt, model="first", just_final=False):
+        raise NotImplementedError
+    
+    def _score_gpt_async(self, gptprompt, model="first", just_final=False):
         raise NotImplementedError
 
     def originality_batch(
