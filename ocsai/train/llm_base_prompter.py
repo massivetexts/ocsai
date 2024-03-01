@@ -12,7 +12,12 @@ class LLM_Base_Prompter():
             self.logger = logging.getLogger(__name__)
             self.logger.setLevel(logging.INFO)
 
-    def craft_prompt(self, item, response, task_type='uses', question=None, language='eng'):
+    def craft_prompt(self,
+                     item: str,
+                     response: str,
+                     task_type: str | None = None,
+                     question: str | None = None,
+                     language: str | None = None):
         '''Craft a prompt for the language model, given an item, response, and task type'''
         raise NotImplementedError
 
@@ -25,7 +30,14 @@ class LLM_Base_Prompter():
             {score, confidence, and flags}'''
         raise NotImplementedError
 
-    def prepare_example(self, item, response, task_type='uses', question=None,
-                        language=None, target=None, confidence=None, seed=None):
+    def prepare_example(self,
+                        item: str,
+                        response: str,
+                        task_type: str | None = None,
+                        question: str | None = None,
+                        language: str | None = None,
+                        target=None,
+                        confidence=None,
+                        seed=None):
         '''Prepare an example for training. Not needed for inference.'''
         pass

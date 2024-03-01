@@ -7,10 +7,9 @@ class GPT_Classic_Prompter(LLM_Base_Prompter):
 
     def craft_prompt(self, item, response, task_type='uses', question=None, language='eng'):
         # prompt templates should take 2 args - item and response
-        if task_type == 'uses':
-            prompt_template = "AUT Prompt:{}\nResponse:{}\nScore:\n"
-        else:
+        if task_type != 'uses':
             self.logger.warning("Only 'uses' task type is supported with Classic Prompter")
+        prompt_template = "AUT Prompt:{}\nResponse:{}\nScore:\n"    
 
         if question:
             self.logger.warning("Question is not supported with Classic Prompter")

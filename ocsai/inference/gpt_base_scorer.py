@@ -109,8 +109,8 @@ class GPT_Base_Scorer:
         prompts,
         responses,
         questions=None,
-        task_types="uses",
-        languages="eng",
+        task_types=None,
+        languages=None,
         model="first",
         raise_errs=False,
         batch_size=20,
@@ -151,10 +151,15 @@ class GPT_Base_Scorer:
             targetbatch = prompts[i * batch_size: (i + 1) * batch_size]
             responsebatch = responses[i * batch_size: (i + 1) * batch_size]
 
-            gptprompts = [
-                self.prompter.craft_prompt(target, response)
-                for target, response in zip(targetbatch, responsebatch)
-            ]
+            gptprompts = []
+            for target, response, task_type, question, language in zip(
+                targetbatch, responsebatch, task_types, questions, languages
+            ):
+                gptprompts.append(
+                    self.prompter.craft_prompt(
+                        target, response, task_type=task_type, question=question, language=language
+                    )
+                )
             scores_raw = self._score_gpt(gptprompts, model=model, just_final=True)
 
             for i, score_raw in enumerate(scores_raw):

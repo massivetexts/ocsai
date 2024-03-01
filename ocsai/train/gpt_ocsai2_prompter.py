@@ -22,19 +22,19 @@ class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
 
     def craft_prompt(
         self,
-        item,
-        response,
-        task_type="uses",
-        question=None,
-        language="eng",
+        item: str,
+        response: str,
+        task_type: str | None = None,
+        question: str | None = None,
+        language: str | None = None,
         seed=None,
-        action_exclude_prob=0,
-        task_type_exclude_prob=0,
-        prompt_exclude_prob=0,
-        language_exclude_prob=0,
-        question_exclude_prob=0,
-        detail_exclude_prob=0,
-        no_flags=False,
+        action_exclude_prob: float = 0,
+        task_type_exclude_prob: float = 0,
+        prompt_exclude_prob: float = 0,
+        language_exclude_prob: float = 0,
+        question_exclude_prob: float = 0,
+        detail_exclude_prob: float = 0,
+        no_flags: bool = False,
     ):
         # Initialize the random number generator with the provided seed
         # no_flags exluded the FLAGS part of the prompt altogether
