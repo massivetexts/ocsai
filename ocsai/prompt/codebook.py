@@ -1,20 +1,30 @@
 import json
 import textwrap
 from pathlib import Path
-from typing import Literal, Union, Sequence
+from typing import Literal, NotRequired, TypedDict, Union, MutableSequence
 from typing_extensions import TypeAlias
 import pandas as pd
 import numpy as np
 import openai
-from .utils import strip_backticks
+from .utils import strip_backticks, hashname
 
 Item: TypeAlias = str
-Labels: TypeAlias = Union[Sequence[str], Sequence[int], pd.Series, np.ndarray]
-Dataset: TypeAlias = list[Item]
+Label: TypeAlias = Union[str, int]
+Labels: TypeAlias = Union[MutableSequence[Label], pd.Series, np.ndarray]
+Dataset: TypeAlias = MutableSequence[Item]
+LabeledDataset: TypeAlias = MutableSequence[tuple[Item, Label]]
 
+WriteProtocol: TypeAlias = Literal["direct", "CoT"]
+IterateProtocol: TypeAlias = Literal["summarize", "merge", "correct"]
 
 class ClassificationEvalResults:
-    def __init__(self, accuracy: float, precision: float, recall: float, f1: float):
+    def __init__(
+        self,
+        accuracy: np.floating,
+        precision: np.floating,
+        recall: np.floating,
+        f1: np.floating,
+    ):
         self.accuracy = accuracy
         self.precision = precision
         self.recall = recall
@@ -39,19 +49,31 @@ class RegressionEvalResults:
 EvalResults: TypeAlias = Union[ClassificationEvalResults, RegressionEvalResults]
 
 
+class CodebookMetadata(TypedDict):
+    item_description: NotRequired[str]
+    label_description: NotRequired[str]
+    scale_details: NotRequired[str | None]
+    format_details: NotRequired[str | None]
+    model: NotRequired[str]
+    source: NotRequired[str]
+    parents: NotRequired[list[str]]
+    protocol: NotRequired[WriteProtocol | IterateProtocol]
+    temperature: NotRequired[float]
+    tokens: NotRequired[int]
+
 class Codebook:
     def __init__(
         self,
         codebook: str,
         id: str | None = None,
         name: str | None = None,
-        metadata: dict = {},
+        metadata: CodebookMetadata = {},
         client: openai.OpenAI = openai.OpenAI(),
     ):
         self.id = id
         self.name = name
         self.codebook = codebook
-        self.metadata: dict = metadata
+        self.metadata: CodebookMetadata = metadata
         self.client: openai.OpenAI = client
 
     def merge(self, other: "Codebook") -> "Codebook":
@@ -81,7 +103,13 @@ class Codebook:
     @staticmethod
     def from_json(data: dict) -> "Codebook":
         # create a codebook from a json representation
-        raise NotImplementedError
+        # at a minimum, the json representation should have a "codebook" key
+        return Codebook(
+            codebook=data["codebook"],
+            id=data["id"] if "id" in data else None,
+            name=data["name"] if "name" in data else None,
+            metadata=data["metadata"] if "metadata" in data else {},
+        )
 
     def __str__(self) -> str:
         return self.codebook
@@ -110,8 +138,44 @@ class Codebook:
         return self.metadata["tokens"]
 
     def label(
-        self, data: Dataset, model: str = "gpt-3.5-turbo", temperature: float = 0.0
+        self,
+        data: Dataset,
+        model: str = "gpt-3.5-turbo",
+        temperature: float = 0.0,
+        max_retries: int = 3,
+        temp_backoff: float = 0.1,
     ) -> Labels:
+        '''
+        Label a dataset of items according to the codebook.
+
+        data: a list of items to label
+        model: A valid model for the openai API
+        temperature: A temperature to use when sampling from the model
+        max_retries: The maximum number of retries to attempt when the 
+            model fails to return a valid response
+        temp_backoff: The amount to increase the temperature by on each retry
+        '''
+
+        while max_retries >= 0:
+            try:
+                labels = self._label(data, model, temperature)
+                break
+            except ValueError:
+                max_retries -= 1
+                temperature += temp_backoff
+                continue
+        return labels
+
+    def _label(
+        self,
+        data: Dataset,
+        model: str = "gpt-3.5-turbo",
+        temperature: float = 0.0
+    ) -> Labels:
+        ''' Label a dataset of items according to the codebook
+          Use 'label' method instead,
+        which includes error handling
+        '''
 
         example_str = "- " + "\n- ".join(list(data))
 
@@ -167,11 +231,12 @@ class Codebook:
         content = response.choices[0].message.content
         if content:
             content = strip_backticks(content)
-            data = json.loads(content)
-            assert isinstance(data, list) and len(data) == len(
-                list(data)
-            ), "Output format didn't match"
-            return data
+            newdata = json.loads(content)
+            if not isinstance(newdata, list):
+                raise ValueError("Output format didn't match")
+            if not len(newdata) == len(list(data)):
+                raise ValueError("Output format didn't match: mismatched length")
+            return newdata
         else:
             return []
 
@@ -182,20 +247,38 @@ class Codebook:
         type: Literal["classification", "regression"],
         model: str = "gpt-3.5-turbo",
         temperature: float = 0.0,
+        label_batch_size: int = 20,
     ) -> EvalResults:
-        labels = self.label(data, model=model, temperature=temperature)
+        '''
+        
+        '''
+        all_labels: list[Label] = []
+        batches: list[Dataset] = []
+        if len(data) > label_batch_size:
+            # split into batches
+            for i in range(0, len(data), label_batch_size):
+                batches.append(data[i:i + label_batch_size])
+        else:
+            batches = [data]
+
+        for batch in batches:
+            labels = self.label(batch, model=model, temperature=temperature)
+            all_labels.extend(labels)
         return evaluate_labels(truth, labels, type)
 
 
 def write_codebook(
     data: Dataset,
-    truth: list[Labels],
+    truth: Labels,
     item_description: str | None,
     label_description: str | None,
     scale_details: str | None = None,
     format_details: str | None = None,
+    protocol: WriteProtocol = "direct",
     model: str = "gpt-3.5-turbo",
-    temperature: float = 0.0,
+    temperature: float = 0.5,
+    name: str | None = None,
+    parent: str | None = None,
 ) -> Codebook:
     """
     Take a dataset of labels and extract a codebook.
@@ -211,9 +294,11 @@ def write_codebook(
         - "human-judged labels of creativity"
 
     scale_details: an optional string describing the scale, e.g.
-        - "The scale is from 1.0 to 5.0, with 1.0 being not at all creative and 5.0 being very creative."
+        - "The scale is from 1.0 to 5.0, with 1.0 being not at all creative and 5.0 being 
+            very creative."
 
-    format_details: an optional string describing additional considerations for the format of the labels, e.g.
+    format_details: an optional string describing additional considerations for the format 
+    of the labels, e.g.
         - "The labels should be in the form of a decimal number"
     """
     if item_description:
@@ -275,36 +360,42 @@ def write_codebook(
         temperature=temperature,
         n=1,
         logprobs=None,
-        max_tokens=1000,
+        max_tokens=5000,
     )
 
     codebook = response.choices[0].message.content
     codebook = codebook if codebook else ""
-    metadata = {
+    
+    metadata: CodebookMetadata = {
         "item_description": item_description,
         "label_description": label_description,
         "scale_details": scale_details,
         "format_details": format_details,
         "model": model,
         "source": "write_codebook",
+        "protocol": protocol,
         "temperature": temperature,
+        "parents": [parent] if parent else [],
         "tokens": response.usage.completion_tokens if response.usage else 0,
     }
-    return Codebook(codebook=codebook, metadata=metadata)
+    return Codebook(codebook=codebook, name=name, metadata=metadata)
 
 
 def evaluate_labels(
-    truth: Labels,
-    predicted: Labels,
-    type: Literal["classification", "regression"]
+    truth: Labels, predicted: Labels, type: Literal["classification", "regression"]
 ) -> EvalResults:
-    # grade the quality of the input on how descriptive it is, based on RMSE.
     if type == "classification":
-        # calculate classification evaluation metrics (accuracy, precision, recall, f1)
-        accuracy = 0.0
-        precision = 0.0
-        recall = 0.0
-        f1 = 0.0
+        from sklearn.metrics import (
+            accuracy_score,
+            precision_score,
+            recall_score,
+            f1_score,
+        )
+
+        accuracy = accuracy_score(truth, predicted)
+        precision = precision_score(truth, predicted, average="weighted")
+        recall = recall_score(truth, predicted, average="weighted")
+        f1 = f1_score(truth, predicted, average="weighted")
         return ClassificationEvalResults(accuracy, precision, recall, f1)
     elif type == "regression":
         # calculate regression evaluation metrics (RMSE, pearsonr)

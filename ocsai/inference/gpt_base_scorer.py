@@ -8,6 +8,7 @@ import numpy as np
 from pathlib import Path
 from ..cache import Ocsai_Cache, Ocsai_Parquet_Cache
 import asyncio
+import json
 
 
 class GPT_Base_Scorer:
@@ -106,17 +107,19 @@ class GPT_Base_Scorer:
 
     def originality_batch(
         self,
-        prompts,
-        responses,
-        questions=None,
-        task_types=None,
-        languages=None,
-        model="first",
-        raise_errs=False,
-        batch_size=20,
-        debug=False,
+        prompts: list[str],
+        responses: list[str],
+        questions: list[str | None] | str | None = None,
+        task_types: list[str | None] | str | None = None,
+        languages: list[str | None] | str | None = None,
+        model: str = "first",
+        raise_errs: bool = False,
+        batch_size: int = 20,
+        debug: bool = False,
+        min_size_to_write_cache: int = 100,
         **kwargs,
     ):
+
         scores = []
         confidences = []
         allflags = []
@@ -132,16 +135,13 @@ class GPT_Base_Scorer:
         if model == "first":
             model = self.models[0]
 
-        # ensure that all base col types are forced to be treated as strings
-        base_cols = ["prompt", "response", "question", "type", "language", "model"]
-
         if self.cache:
             df = pd.DataFrame(
                 list(zip(prompts, responses, questions, task_types, languages)),
-                columns=base_cols[:-1],
+                columns=self.cache.base_cols[:-1],
             )
             df["model"] = self._models[model]
-            df = df.astype({col: "object" for col in base_cols})
+            df = df.astype({col: "object" for col in self.cache.base_cols})
             to_score, cache_results = self.cache.get_cache_scores(df)
             prompts, responses = to_score.prompt.tolist(), to_score.response.tolist()
 
@@ -161,7 +161,6 @@ class GPT_Base_Scorer:
                     )
                 )
             scores_raw = self._score_gpt(gptprompts, model=model, just_final=True)
-
             for i, score_raw in enumerate(scores_raw):
                 score, confidence, flags = None, None, None
                 try:
@@ -184,14 +183,13 @@ class GPT_Base_Scorer:
             newly_scored["confidence"] = confidences
             newly_scored["flags"] = allflags
             newly_scored["timestamp"] = time.time()
-            min_size_to_write_cache = 100
             self.cache.write(newly_scored, min_size_to_write_cache)
 
             right = pd.concat([cache_results, newly_scored])
             self.logger.debug(
                 f"score length: {len(right)}; Merging back to original {len(df)} item frame"
             )
-            final_results = df.merge(right, how="left", on=base_cols).replace(
+            final_results = df.merge(right, how="left", on=self.cache.base_cols).replace(
                 {np.nan: None}
             )
             # return a list of dicts, with score, confidence, and flags
@@ -213,18 +211,19 @@ class GPT_Base_Scorer:
     def originality_df(
         self,
         dataframe,
-        model="first",
-        raise_errs=False,
-        batch_size=20,
-        prompt_col="prompt",
-        response_col="response",
-        question_col="question",
-        type_col="type",
-        language_col="language",
-        score_name="score",
-        confidence_name="confidence",
-        flags_name="flags",
-        force_overwrite=False,
+        model: str = "first",
+        raise_errs: bool = False,
+        batch_size: int = 20,
+        prompt_col: str = "prompt",
+        response_col: str | None = "response",
+        question_col: str | None = "question",
+        type_col: str | None = "type",
+        language_col: str | None = "language",
+        score_name: str = "score",
+        confidence_name: str = "confidence",
+        flags_name: str = "flags",
+        min_size_to_write_cache: int = 100,
+        force_overwrite: bool = False,
     ):
         """Run originality scoring on a dataframe, and append the results to a new dataframe"""
         if question_col in dataframe.columns:
@@ -254,6 +253,7 @@ class GPT_Base_Scorer:
             model=model,
             raise_errs=raise_errs,
             batch_size=batch_size,
+            min_size_to_write_cache=min_size_to_write_cache,
         )
         scores_df = pd.DataFrame(scores)
         outdf = dataframe.copy()

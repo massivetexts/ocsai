@@ -27,25 +27,31 @@ class Ocsai_Parquet_Cache(Ocsai_Cache):
         return len(list(all_files)) == 0
 
     def _check_input_format(self, df: pd.DataFrame):
-        # TODO check that incoming dataframe has proper columns
-        pass
+        for col in self.base_cols:
+            if col not in df.columns:
+                raise ValueError(f"Column {col} not found in input dataframe")
 
     def get_cache_scores(self, df: pd.DataFrame):
         """For a dataframe, join from cache. Returns
 
         (scored, unscored) dataframes"""
         self._check_input_format(df)
+        # coltypes = {col: str for col in self.base_cols}
+        # coltypes.update({"score": float, "timestamp": int,
+        #                  "confidence": int, "flags": str})
+        # df = df.astype(coltypes)
 
         if self.is_empty():
             cache_results = pd.DataFrame(
                 [], columns=self.base_cols + ["score", "timestamp"]
-            )
+            ) # .astype({col: str for col in self.base_cols})
             cache_results = df.merge(cache_results, how="left", on=self.base_cols)
         else:
             # Using IS NOT DISTINCT FROM to handle nulls
             col_match_sql = " AND ".join(
                 [f"df.{x} IS NOT DISTINCT FROM cache.{x}" for x in self.base_cols]
             )
+            # col_select_sql = ", ".join([f"df.{x}" for x in self.base_cols])
             cache_results = duckdb.query(
                 "SELECT df.*, cache.score, cache.confidence, cache.flags, cache.timestamp FROM "
                 f"df LEFT JOIN '{self.cache_path}/*.parquet' cache ON {col_match_sql}"
@@ -58,7 +64,7 @@ class Ocsai_Parquet_Cache(Ocsai_Cache):
         cache_results = pd.concat([cache_results, in_memory_results])
 
         cache_results = cache_results.drop_duplicates(self.base_cols)
-        cache_results = cache_results.astype({col: "object" for col in self.base_cols})
+        # cache_results = cache_results.astype(coltypes)
         # force non-response score to be 1.
         cache_results.loc[cache_results.response.str.strip() == "", "score"] = 1
 
@@ -86,11 +92,13 @@ class Ocsai_Parquet_Cache(Ocsai_Cache):
         # append in-memory cache
         if len(self.in_memory_cache) > 0:
             total_cache = pd.concat([self.in_memory_cache, df]).drop_duplicates(self.base_cols)
+            # total_cache = total_cache.astype({col: str for col in self.base_cols})
             self.logger.info("Writing to in-memory cache. Total cache size:", len(total_cache))
         else:
             total_cache = df
 
         if len(total_cache) > min_size_to_write:
+            # total_cache = total_cache.astype({col: str for col in self.base_cols})
             total_cache.to_parquet(self.cache_path / f"results.{time.time()}.parquet")
             self.in_memory_cache = pd.DataFrame(
                 [], columns=self.base_cols + ["score", "timestamp"]
