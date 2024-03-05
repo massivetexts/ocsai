@@ -4,6 +4,7 @@ import pandas as pd
 import time
 from pathlib import Path
 from typing import Union
+from .ocsai.utils import set_cache_dtypes
 
 
 class Ocsai_Parquet_Cache(Ocsai_Cache):
@@ -88,17 +89,18 @@ class Ocsai_Parquet_Cache(Ocsai_Cache):
         
         if df.empty:
             return
+        
+
 
         # append in-memory cache
         if len(self.in_memory_cache) > 0:
             total_cache = pd.concat([self.in_memory_cache, df]).drop_duplicates(self.base_cols)
-            # total_cache = total_cache.astype({col: str for col in self.base_cols})
             self.logger.info("Writing to in-memory cache. Total cache size:", len(total_cache))
         else:
             total_cache = df
 
         if len(total_cache) > min_size_to_write:
-            # total_cache = total_cache.astype({col: str for col in self.base_cols})
+            total_cache = set_cache_dtypes(total_cache)
             total_cache.to_parquet(self.cache_path / f"results.{time.time()}.parquet")
             self.in_memory_cache = pd.DataFrame(
                 [], columns=self.base_cols + ["score", "timestamp"]

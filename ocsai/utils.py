@@ -1,3 +1,9 @@
+import pandas as pd
+import numpy as np
+from tqdm import tqdm
+from pathlib import Path
+
+
 def can_render_md_html():
     try:
         from IPython import get_ipython
@@ -44,16 +50,35 @@ def fingerprint_df(
     )
 
 
+def set_cache_dtypes(df):
+    # string cols
+    for col in ["prompt", "response", "model", "question", "type", "language"]:
+        if col in df.columns:
+            df[col] = df[col].astype(object).fillna("").astype(str)
+
+    # object cols
+    for col in ["flags"]:
+        if col in df.columns:
+            df[col] = df[col].astype(object)
+
+    # numeric cols (allowing errors)
+    for col in ["score", "confidence"]:
+        df[col] = pd.to_numeric(df[col], errors="ignore")
+
+    # float cols
+    for col in ["timestamp"]:
+        if col in df.columns:
+            df[col] = df[col].astype(float)
+
+    return df
+
+
 def upgrade_cache(
     cache_path,
     chunksize=1000000,
     base_cols=["prompt", "response", "question", "type", "language", "model"],
     raise_on_error=True,
 ):
-    import pandas as pd
-    import numpy as np
-    from tqdm import tqdm
-    from pathlib import Path
 
     # upgrade cache - open each parquet file in the directory, ensure
     # that it has the right columns, and if not, add them. Then write
@@ -69,8 +94,9 @@ def upgrade_cache(
         chunk_n = 0
         for cache_file in tqdm(cache_files):
             df = pd.read_parquet(cache_file)
+            df = set_cache_dtypes(df)
             # drop rows where score is null or none or na
-            df = df.dropna(subset=["score"])
+            df = df[~df["score"].replace("", pd.NA).isna()]
             # fingerprint the dataframe and remove any hashes that are already in all_hashes
             hashes = fingerprint_df(df, [c for c in base_cols if c in df.columns])
             hashes = [h in all_hashes for h in hashes]
@@ -123,7 +149,7 @@ def upgrade_cache(
                     data_collector = data_collector.iloc[chunksize:]
                     ts = pd.Timestamp.now().strftime("%Y%m%d%H%M%S")
                     fname = cache_path / f"results.{ts}.{chunk_n}.parquet"
-                    chunk.to_parquet(fname)
+                    set_cache_dtypes(chunk).to_parquet(fname)
                     all_new_files.append(fname)
                     chunk_n += 1
 
@@ -131,7 +157,7 @@ def upgrade_cache(
         if data_collector is not None and len(data_collector) > 0:
             ts = pd.Timestamp.now().strftime("%Y%m%d%H%M%S")
             fname = cache_path / f"results.{ts}.{chunk_n}.parquet"
-            data_collector.to_parquet(fname)
+            set_cache_dtypes(data_collector).to_parquet(fname)
             all_new_files.append(fname)
 
     except KeyboardInterrupt:
@@ -147,8 +173,9 @@ def upgrade_cache(
     # CHECK THAT NO DATA IS LOST
     original_ids = []
     for cache_file in tqdm(cache_files, desc="checking ids on old files"):
-        df = pd.read_parquet(cache_file).dropna(subset=["score"])
-
+        df = pd.read_parquet(cache_file)
+        df = df[df["score"].replace('', pd.NA).notna()]
+        df = set_cache_dtypes(df)
         ids = fingerprint_df(df, base_cols)
         original_ids.extend(ids)
     original_ids = set(original_ids)
