@@ -52,7 +52,7 @@ def fingerprint_df(
 
 def set_cache_dtypes(df):
     # string cols
-    for col in ["prompt", "response", "model", "question", "type", "language"]:
+    for col in ["prompt", "response", "question", "type", "language", "model"]:
         if col in df.columns:
             df[col] = df[col].astype(object).fillna("").astype(str)
 
@@ -63,7 +63,8 @@ def set_cache_dtypes(df):
 
     # numeric cols (allowing errors)
     for col in ["score", "confidence"]:
-        df[col] = pd.to_numeric(df[col], errors="ignore")
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="ignore")
 
     # float cols
     for col in ["timestamp"]:

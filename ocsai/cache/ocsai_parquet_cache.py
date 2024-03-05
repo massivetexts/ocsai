@@ -4,7 +4,7 @@ import pandas as pd
 import time
 from pathlib import Path
 from typing import Union
-from .ocsai.utils import set_cache_dtypes
+from ..utils import set_cache_dtypes
 
 
 class Ocsai_Parquet_Cache(Ocsai_Cache):
@@ -37,26 +37,25 @@ class Ocsai_Parquet_Cache(Ocsai_Cache):
 
         (scored, unscored) dataframes"""
         self._check_input_format(df)
-        # coltypes = {col: str for col in self.base_cols}
-        # coltypes.update({"score": float, "timestamp": int,
-        #                  "confidence": int, "flags": str})
-        # df = df.astype(coltypes)
+        df = set_cache_dtypes(df)
 
         if self.is_empty():
             cache_results = pd.DataFrame(
                 [], columns=self.base_cols + ["score", "timestamp"]
-            ) # .astype({col: str for col in self.base_cols})
+            )
+            cache_results = set_cache_dtypes(cache_results)
             cache_results = df.merge(cache_results, how="left", on=self.base_cols)
         else:
             # Using IS NOT DISTINCT FROM to handle nulls
             col_match_sql = " AND ".join(
                 [f"df.{x} IS NOT DISTINCT FROM cache.{x}" for x in self.base_cols]
             )
-            # col_select_sql = ", ".join([f"df.{x}" for x in self.base_cols])
+            col_select_sql = ", ".join([f"df.{x}::VARCHAR" for x in self.base_cols])
             cache_results = duckdb.query(
-                "SELECT df.*, cache.score, cache.confidence, cache.flags, cache.timestamp FROM "
+                f"SELECT {col_select_sql}, cache.score, cache.confidence, cache.flags, cache.timestamp FROM "
                 f"df LEFT JOIN '{self.cache_path}/*.parquet' cache ON {col_match_sql}"
             ).to_df()
+            cache_results = set_cache_dtypes(cache_results)
 
         # Add a join with the in-memory cache
         in_memory_results = df.merge(
