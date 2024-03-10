@@ -50,7 +50,7 @@ class Ocsai_Parquet_Cache(Ocsai_Cache):
             col_match_sql = " AND ".join(
                 [f"df.{x} IS NOT DISTINCT FROM cache.{x}" for x in self.base_cols]
             )
-            col_select_sql = ", ".join([f"df.{x}::VARCHAR" for x in self.base_cols])
+            col_select_sql = ", ".join([f"df.{x}::VARCHAR as {x}" for x in self.base_cols])
             cache_results = duckdb.query(
                 f"SELECT {col_select_sql}, cache.score, cache.confidence, cache.flags, cache.timestamp FROM "
                 f"df LEFT JOIN '{self.cache_path}/*.parquet' cache ON {col_match_sql}"
