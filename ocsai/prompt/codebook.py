@@ -61,6 +61,7 @@ class CodebookMetadata(TypedDict):
     temperature: NotRequired[float]
     tokens: NotRequired[int]
 
+
 class Codebook:
     def __init__(
         self,
@@ -301,6 +302,9 @@ def write_codebook(
     of the labels, e.g.
         - "The labels should be in the form of a decimal number"
     """
+    max_tokens = 4096
+    if model == "gpt-3.5-turbo":
+        max_tokens = 4096 # todo add other models and account for input
     if item_description:
         item_description = item_description[0].lower() + item_description[1:]
         item_description = "- Item description: " + item_description
@@ -360,7 +364,7 @@ def write_codebook(
         temperature=temperature,
         n=1,
         logprobs=None,
-        max_tokens=5000,
+        max_tokens=4096,
     )
 
     codebook = response.choices[0].message.content
