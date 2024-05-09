@@ -1,7 +1,7 @@
 import json
 import textwrap
 from pathlib import Path
-from typing import Literal, TypedDict, Union, MutableSequence
+from typing import Literal, TypedDict, MutableSequence
 import anthropic
 from typing_extensions import TypeAlias, NotRequired
 import pandas as pd
@@ -11,8 +11,8 @@ from tqdm.auto import tqdm
 from .utils import strip_backticks, hashname
 
 Item: TypeAlias = str
-Label: TypeAlias = Union[str, int, float]
-Labels: TypeAlias = Union[MutableSequence[Label], pd.Series, np.ndarray]
+Label: TypeAlias = str | int | float
+Labels: TypeAlias = MutableSequence[Label] | pd.Series | np.ndarray
 Dataset: TypeAlias = MutableSequence[Item]
 LabeledDataset: TypeAlias = MutableSequence[tuple[Item, Label]]
 
@@ -32,7 +32,7 @@ class RegressionEvalResults(TypedDict):
     pearsonr: float
 
 
-EvalResults: TypeAlias = Union[ClassificationEvalResults, RegressionEvalResults]
+EvalResults: TypeAlias = ClassificationEvalResults | RegressionEvalResults
 
 
 class EvalRun(TypedDict):

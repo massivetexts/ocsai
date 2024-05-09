@@ -3,7 +3,6 @@ import duckdb
 import pandas as pd
 import time
 from pathlib import Path
-from typing import Union
 from ..utils import set_cache_dtypes
 
 
@@ -16,7 +15,7 @@ class Ocsai_Parquet_Cache(Ocsai_Cache):
     really small results.
     """
 
-    def __init__(self, cache_path: Union[str, Path], logger=None):
+    def __init__(self, cache_path: str | Path, logger=None):
         super().__init__(cache_path, logger)
         self.cache_path = cache_path
         self.in_memory_cache = pd.DataFrame(

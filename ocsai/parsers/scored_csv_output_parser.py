@@ -1,13 +1,12 @@
 import csv
 import re
 from io import StringIO
-from typing import List, Optional
 
 
 class ScoredCSVOutputParser:
     """Parse out multiple line comma separated lists."""
 
-    def __init__(self, examples: Optional[str] = ["response", "score"]):
+    def __init__(self, examples: str | None = ["response", "score"]):
         self.examples = examples
 
     def get_format_instructions(self) -> str:
@@ -16,7 +15,7 @@ class ScoredCSVOutputParser:
             f"eg: `{','.join(self.examples)}`"
         )
 
-    def parse(self, text: str) -> List[List[str]]:
+    def parse(self, text: str) -> list[list[str]]:
         """Parse the output of an LLM call."""
         csv_file = StringIO(text)
         cleaned = []
