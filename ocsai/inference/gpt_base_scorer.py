@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from ..cache import Ocsai_Cache, Ocsai_Parquet_Cache
-import asyncio
+# import asyncio
 
 
 class GPT_Base_Scorer:
@@ -31,9 +31,9 @@ class GPT_Base_Scorer:
 
         self._models = model_dict
         self.client = openai.OpenAI(api_key=openai.api_key)
-        self.async_client = openai.AsyncOpenAI(api_key=openai.api_key)
-        max_async_processes = 10
-        self.async_semaphore = asyncio.Semaphore(max_async_processes)
+        # self.async_client = openai.AsyncOpenAI(api_key=openai.api_key)
+        # max_async_processes = 10
+        # self.async_semaphore = asyncio.Semaphore(max_async_processes)
 
         self.cache = None
         if cache:

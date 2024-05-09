@@ -1,12 +1,14 @@
-from .gpt_classic_prompter import GPT_Classic_Prompter
+from .gpt_classic_chat_prompter import GPT_Classic_Chat_Prompter
 
 
-class GPT_Classic2_Prompter(GPT_Classic_Prompter):
-    ''' A slightly modified training format from the 'classic' format in
-    Organisciak et al. 2023, used in Acar et al. 2023, adjusted to support
-    multiple task types.
+class GPT_Classic2_Chat_Prompter(GPT_Classic_Chat_Prompter):
     '''
-    max_tokens: int = 2
+    The format used in the multi-task format, adjusted to work with chat.
+
+    There's some redundancy with GPT_Classic_Prompter - in the future I'll
+    disambiguate model type parsing and prompt formats.
+    '''
+    sys_msg_text = "You score originality in divergent thinking tasks."
 
     def craft_prompt(self, item: str, response: str,
                      task_type: str | None = 'uses', question=None,
