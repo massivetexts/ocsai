@@ -38,6 +38,8 @@ def generic_llm(text,
             **common_args
         )
         content = response.choices[0].message.content
+    else:
+        raise ValueError("client must be either an anthropic.Anthropic or openai.OpenAI object.")
     return content
 
 

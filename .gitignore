@@ -6,3 +6,4 @@ data/datasets/*csv
 data/test_cache/
 notebooks/wandb
 old/
+notebooks/*[Dd]ev.ipynb
