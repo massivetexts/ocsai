@@ -2,6 +2,43 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from pathlib import Path
+import anthropic
+import openai
+
+
+def generic_llm(text,
+                sysmsg,
+                client: anthropic.Anthropic | openai.OpenAI,
+                model: str = 'gpt-3.5-turbo',
+                temperature: float = 0.0,
+                max_tokens: int = 300,
+                ) -> str:
+    '''Run an openai or anthropic api call, based on the supplied client.'''
+    common_args = {
+        'model': model,
+        'temperature': temperature,
+        'max_tokens': max_tokens
+    }
+    if type(client) is anthropic.Anthropic:
+        response = client.messages.create(
+                system=sysmsg,
+                messages=[
+                    {'role': 'user', 'content': text}
+                ],
+                **common_args
+            )
+
+        content = response.content[0].text
+    elif type(client) is openai.OpenAI:
+        response = client.chat.completions.create(
+            messages=[
+                {'role': 'system', 'content': sysmsg},
+                {'role': 'user', 'content': text}
+            ],
+            **common_args
+        )
+        content = response.choices[0].message.content
+    return content
 
 
 def can_render_md_html():
