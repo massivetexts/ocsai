@@ -1,4 +1,5 @@
-from typing import Union
+from typing import Optional, Union
+from ..train.llm_base_prompter import LLM_Base_Prompter, FullScore
 import openai
 from tqdm.auto import tqdm
 import time
@@ -8,22 +9,25 @@ import numpy as np
 from pathlib import Path
 from ..cache import Ocsai_Cache, Ocsai_Parquet_Cache
 import asyncio
-import json
 
 
 class GPT_Base_Scorer:
+
+    DEFAULT_PROMPTER = LLM_Base_Prompter
+
     def __init__(
         self,
         openai_key_path: Union[str, None] = None,
-        model_dict: Union[dict, None] = None,
+        model_dict: dict = {},
         cache: Union[str, Ocsai_Parquet_Cache, Path, None] = None,
         logger=None,
         prompter=None,
     ):
-        self.logger = logger
-        if not self.logger:
+        if not logger:
             self.logger = logging.getLogger(__name__)
             self.logger.setLevel(logging.INFO)
+        else:
+            self.logger = logger
 
         self._models = model_dict
         self.client = openai.OpenAI(api_key=openai.api_key)
@@ -40,8 +44,7 @@ class GPT_Base_Scorer:
                 self.cache = cache
 
         # ensure that subclasses set the prompter
-        self.prompter = prompter
-        assert self.prompter is not None
+        self.prompter = prompter if prompter else self.DEFAULT_PROMPTER()
 
     def originality(
         self,
@@ -69,40 +72,49 @@ class GPT_Base_Scorer:
 
     def score(
         self,
-        target,
-        response,
-        question=None,
-        task_type="uses",
-        language="eng",
-        model="first",
-        raise_errs=False,
+        target: str,
+        response: str,
+        question: str | None = None,
+        task_type: str | None = "uses",
+        language: str | None = "eng",
+        model: str = "first",
+        top_probs: int = 0,
+        raise_errs: bool = False,
         **kwargs,
-    ):
+    ) -> FullScore:
         """Get full score information: originality, flags, and confidence"""
         if model == "first":
             model = self.models[0]
         prompt_str = self.prompter.craft_prompt(
             target, response, question=question, task_type=task_type, language=language
         )
-        score_raw = self._score_gpt(prompt_str, model=model, just_final=True)[0]
+        score_raw = self._score_gpt(prompt_str, model=model,
+                                    top_probs=top_probs,
+                                    raw=False)[0]
         try:
-            response_dict = self.prompter.parse_response(score_raw)
+            response_dict = self.prompter.parse_content(score_raw, type="top")
         except:
             if raise_errs:
                 self.logger.exception(
                     f"GPT prompt:{prompt_str.strip()}\nraw response:{score_raw}"
                 )
                 raise
-            return {"score": None, "confidence": None, "flags": None}
+            return {"score": None, "confidence": None, "flags": None, "n": None, "type": "other"}
         return response_dict
 
     def add_model(self, name, finetunepath):
         self.models[name] = finetunepath
 
-    def _score_gpt(self, gptprompt, model="first", just_final=False):
+    def _score_gpt(self, gptprompt: str | list[str],
+                   model: str = "first",
+                   top_probs: int = 0,
+                   raw: bool = False):
         raise NotImplementedError
-    
-    def _score_gpt_async(self, gptprompt, model="first", just_final=False):
+
+    def _score_gpt_async(self, gptprompt,
+                   model: str = "first",
+                   top_probs: int = 0,
+                   raw: bool = False):
         raise NotImplementedError
 
     def originality_batch(
@@ -115,6 +127,7 @@ class GPT_Base_Scorer:
         model: str = "first",
         raise_errs: bool = False,
         batch_size: int = 20,
+        top_probs: int = 0,
         debug: bool = False,
         min_size_to_write_cache: int = 100,
         **kwargs,
@@ -157,17 +170,25 @@ class GPT_Base_Scorer:
             ):
                 gptprompts.append(
                     self.prompter.craft_prompt(
-                        target, response, task_type=task_type, question=question, language=language
+                        target,
+                        response,
+                        task_type=task_type,
+                        question=question,
+                        language=language,
                     )
                 )
-            scores_raw = self._score_gpt(gptprompts, model=model, just_final=True)
+            scores_raw = self._score_gpt(gptprompts, model=model,
+                                         top_probs=top_probs,
+                                         raw=False)
             for i, score_raw in enumerate(scores_raw):
                 score, confidence, flags = None, None, None
                 try:
-                    response_dict = self.prompter.parse_response(score_raw)
+                    response_dict = self.prompter.parse_content(score_raw, type="top")
                     score = response_dict["score"]
                     confidence = response_dict["confidence"]
                     flags = response_dict["flags"]
+                except KeyboardInterrupt:
+                    raise
                 except:
                     if raise_errs:
                         print(f"GPT prompt: {gptprompts[i].strip()}")
@@ -189,9 +210,9 @@ class GPT_Base_Scorer:
             self.logger.debug(
                 f"score length: {len(right)}; Merging back to original {len(df)} item frame"
             )
-            final_results = df.merge(right, how="left", on=self.cache.base_cols).replace(
-                {np.nan: None}
-            )
+            final_results = df.merge(
+                right, how="left", on=self.cache.base_cols
+            ).replace({np.nan: None})
             # return a list of dicts, with score, confidence, and flags
             return final_results[["score", "confidence", "flags"]].to_dict("records")
         else:
@@ -279,17 +300,17 @@ class GPT_Base_Scorer:
             "Fluency is not calculated at the item level. Use `ocs.file.fluency` to calculate it."
         )
 
-    def elaboration(self, phrase, elabfunc="whitespace"):
+    def elaboration(self, phrase, elabfunc: str = "whitespace"):
         if elabfunc == "whitespace":
 
-            def elabfunc(x):
+            def elabfunc_1(x):
                 return len(x.split())
 
         else:
             raise Exception("Only whitespace elaboration calculated by LLM Scoring.")
 
         try:
-            elab = elabfunc(phrase)
+            elab = elabfunc_1(phrase)
         except:
             raise
             elab = None

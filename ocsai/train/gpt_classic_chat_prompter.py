@@ -1,4 +1,4 @@
-from .gpt_classic_prompter import GPT_Classic_Prompter
+from .gpt_classic_prompter import GPT_Classic_Prompter, LogProbPair
 
 
 class GPT_Classic_Chat_Prompter(GPT_Classic_Prompter):
@@ -26,3 +26,11 @@ class GPT_Classic_Chat_Prompter(GPT_Classic_Prompter):
             }
             msgs.append(ast_msg)
         return msgs
+
+    def _extract_token_logprobs(self, response) -> list[LogProbPair]:
+        '''Extract the token log probabilities from a response.'''
+        self.logger.warning("Chat models, even with temperature=0, exhibit more randomness "
+                            "than classic models.")
+        score_logprobs = [(x.token, x.logprob)
+                          for x in response.choices[0].logprobs.content[0].top_logprobs]
+        return score_logprobs

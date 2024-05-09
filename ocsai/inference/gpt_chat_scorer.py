@@ -13,14 +13,16 @@ GPTCHATMODELS = {
 
 class GPT_Chat_Scorer(GPT_Base_Scorer):
 
+    DEFAULT_PROMPTER = GPT_Classic_Chat_Prompter
+
     def __init__(self, *args, **kwargs):
         if "model_dict" not in kwargs or not kwargs["model_dict"]:
             kwargs["model_dict"] = GPTCHATMODELS
         if "prompter" not in kwargs or not kwargs["prompter"]:
-            kwargs["prompter"] = GPT_Classic_Chat_Prompter()
+            kwargs["prompter"] = self.DEFAULT_PROMPTER()
         super().__init__(*args, **kwargs)
 
-    async def _score_gpt_async(self, gptprompt, model="first", just_final=True):
+    async def _score_gpt_async(self, gptprompt, model="first", top_probs: int = 0, raw: bool = False):
         if model == "first":
             model = self.models[0]
 
@@ -45,22 +47,24 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
                     max_tokens=self.prompter.max_tokens,
                 )
                 return response
-            
+
         all_responses = [process_prompt(prompt) for prompt in gptprompt]
         final_responses = await asyncio.gather(*all_responses)
-        if not just_final:
+        if raw:
             return final_responses
         else:
             content = [
-                response.choices[0].message.content for response in await final_responses
+                response.choices[0].message.content
+                for response in await final_responses
             ]
             return content
 
     def _score_gpt(
         self,
-        gptprompt: Union[str, List[str]],
+        gptprompt: str | List[str],
         model: str = "first",
-        just_final: bool = True,
+        top_probs: int = 0,
+        raw: bool = False,
         runasync=False,
     ):
         """
@@ -68,12 +72,19 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
 
         If a string is provided, returns a single response. If a list is provided,
         returns a list of responses in the same order.
+
+        Returns:
+        - An OpenAI completion object if raw=True
+        - A list of strings if raw=False and top_probs=0
+        - A list of (string, ProbScores) tuples if raw=False and top_probs>0
         """
         if runasync:
             raise NotImplementedError("This method is not yet complete.")
-            all_responses = asyncio.run(self._score_gpt_async(gptprompt, model, just_final=False))
-        
-            if not just_final:
+            all_responses = asyncio.run(
+                self._score_gpt_async(gptprompt, model, raw=True)
+            )
+
+            if raw:
                 return all_responses
             else:
                 content = [
@@ -86,6 +97,11 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
         all_responses = []
         if type(gptprompt) is str:
             gptprompt = [gptprompt]
+
+        logprobs: int | None = None
+        if top_probs > 0:
+            assert top_probs <= 20, "OpenAI API only supports 20 logprobs at a time."
+            logprobs = top_probs
 
         SYS_MSG = {"role": "system", "content": self.prompter.sys_msg_text}
 
@@ -104,7 +120,8 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
                 messages=messages,
                 temperature=0,
                 n=1,
-                logprobs=None,
+                logprobs=bool(logprobs),
+                top_logprobs=logprobs,
                 # Expected token counts:
                 # Just score is 6 tokens;
                 # score+confidence is 13 tokens;
@@ -114,10 +131,10 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
             )
             all_responses.append(response)
 
-        if not just_final:
+        if raw:
             return all_responses
         else:
-            content = [
-                response.choices[0].message.content for response in all_responses
-            ]
-            return content
+        return [
+            self.prompter.standardize_response(response)
+            for response in all_responses
+        ]

@@ -1,8 +1,8 @@
-from .llm_base_prompter import LLM_Base_Prompter
+from .llm_base_prompter import LLM_Base_Prompter, StandardAIResponse
+from .llm_base_prompter import LogProbPair, FullScore, ResponseTypes
 import random
 import numpy as np
 import re
-import pandas as pd
 
 
 class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
@@ -63,7 +63,8 @@ class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
                     "FORMAT: Return in the format of newline-separated `KEY:value` pairs, with the following fields:\n"
                     "- `SCORE`: An originality score, 1-5\n"
                     "- `CONFIDENCE`: A measure of confidence in the score, 1-3, or None.\n"
-                    "- `FLAGS`: A comma-separated list with content flags, such as: 'nonsense', 'violent', 'not practical'"
+                    "- `FLAGS`: A comma-separated list with content flags, such as: 'nonsense', 'violent', "
+                    "'not practical'"
                 ),
                 detail_exclude_prob,
             ),
@@ -107,31 +108,33 @@ class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
             response += f"FLAGS: {flags}"
         return response.strip()
 
-    def parse_response(self, response):
+    def parse_content(self, content: str, type: ResponseTypes = "other") -> FullScore:
         """
         Parse the response from the OCSAI dataset into a score, confidence, and flags
         """
         score, confidence, flags = None, None, None
-        score = response.split("SCORE:")[1].split("\n")[0]
+        score = response_raw.split("SCORE:")[1].split("\n")[0]
         if score == "null":
             score = None
         else:
             score = float(score)
 
-        if "CONFIDENCE: " in response:
-            confidence = response.split("CONFIDENCE: ")[1].split("\n")[0]
+        if "CONFIDENCE: " in response_raw:
+            confidence = response_raw.split("CONFIDENCE: ")[1].split("\n")[0]
             confidence = int(confidence)
 
-        if "FLAGS: " in response:
-            flags = response.split("FLAGS: ")[1].split("\n")[0].split(",")
+        if "FLAGS: " in response_raw:
+            flags = response_raw.split("FLAGS: ")[1].split("\n")[0].split(",")
             flags = [f.strip() for f in flags]
 
-        return dict(
-            score=pd.to_numeric(score, errors="ignore"),
-            confidence=pd.to_numeric(confidence, errors="ignore"),
-            flags=flags,
-        )
-        # return score  # currently the base class doesn't support confidence or flags
+        parsed: FullScore = {
+            "score": score,
+            "confidence": confidence,
+            "flags": flags,
+            "n": 1,
+            "type": type
+        }
+        return parsed
 
     def prepare_training_prompt(
         self, item, response, task_type, question, language, seed=None
@@ -186,6 +189,18 @@ class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
             }
             msgs.append(ast_msg)
         return msgs
+
+    def _extract_token_logprobs(self, response) -> list[LogProbPair]:
+        """Extract the token log probabilities from a response."""
+        self.logger.warning(
+            "Chat models, even with temperature=0, exhibit more randomness "
+            "than classic models."
+        )
+        score_logprobs = [
+            (x.token, x.logprob)
+            for x in response.choices[0].logprobs.content[0].top_logprobs
+        ]
+        return score_logprobs
 
     def prepare_example_from_series(self, row, seed=None):
         """Parse a row of a DataFrame, with the following columns:
