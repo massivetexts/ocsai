@@ -1,5 +1,5 @@
-from typing import Optional, Union
-from ..train.llm_base_prompter import LLM_Base_Prompter, FullScore
+from typing import Literal
+from ..train.llm_base_prompter import LLM_Base_Prompter, FullScore, StandardAIResponse
 import openai
 from tqdm.auto import tqdm
 import time
@@ -17,9 +17,9 @@ class GPT_Base_Scorer:
 
     def __init__(
         self,
-        openai_key_path: Union[str, None] = None,
+        openai_key_path: str | None = None,
         model_dict: dict = {},
-        cache: Union[str, Ocsai_Parquet_Cache, Path, None] = None,
+        cache: str | Ocsai_Parquet_Cache | Path | None = None,
         logger=None,
         prompter=None,
     ):
@@ -55,8 +55,9 @@ class GPT_Base_Scorer:
         language="eng",
         model="first",
         raise_errs=False,
+        score_source: Literal["top", "weighted"] = "top",
         **kwargs,
-    ):
+    ) -> float | None:
         """Get originality score"""
         response_dict = self.score(
             target,
@@ -68,7 +69,12 @@ class GPT_Base_Scorer:
             raise_errs=raise_errs,
             **kwargs,
         )
-        return response_dict["score"]
+        scores = [r["score"] for r in response_dict]
+        if len(scores) == 1:
+            score = scores[0]
+        else:
+            score = scores[0] if score_source == "weighted" else scores[1]
+        return score
 
     def score(
         self,
@@ -80,41 +86,104 @@ class GPT_Base_Scorer:
         model: str = "first",
         top_probs: int = 0,
         raise_errs: bool = False,
+        confidence_priority: Literal["content", "probabilities"] = "probabilities",
         **kwargs,
-    ) -> FullScore:
-        """Get full score information: originality, flags, and confidence"""
+    ) -> list[FullScore]:
+        """
+        Get full score information: originality, flags, and confidence
+
+        Args:
+
+        top_probs: int: Number of top probabilities to return.
+            If 0, only return the top completion.
+
+        confidence_priority: bool: If getting confidence from multiple sources, which one to keep.
+
+        Returns:
+        - A full score item, or two items if top_probs > 0 (one weighted, one top)
+        """
         if model == "first":
             model = self.models[0]
         prompt_str = self.prompter.craft_prompt(
             target, response, question=question, task_type=task_type, language=language
         )
-        score_raw = self._score_gpt(prompt_str, model=model,
-                                    top_probs=top_probs,
-                                    raw=False)[0]
+        standard_response = self._score_gpt(
+            prompt_str, model=model, top_probs=top_probs
+        )
+        assert len(standard_response) == 1  # expected only one here
+        return self._parse_standard_response(
+            standard_response[0],
+            confidence_priority=confidence_priority,
+            raise_errs=raise_errs,
+        )
+
+    def _parse_standard_response(
+        self,
+        standard_response: StandardAIResponse,
+        raise_errs: bool = False,
+        confidence_priority: Literal["content", "probabilities"] = "probabilities",
+    ) -> list[FullScore]:
+        """Take a single standard response, parse the content and log probs.
+        Returns a list of FullScore items - one for the top completion, and one
+         (if applicable) for the weighted completion.
+        """
         try:
-            response_dict = self.prompter.parse_content(score_raw, type="top")
-        except:
+            parsed_content: FullScore = self.prompter.parse_content(
+                standard_response["content"], type="top"
+            )
+        except KeyboardInterrupt:
+            raise
+        except:  # noqa: E722
             if raise_errs:
                 self.logger.exception(
-                    f"GPT prompt:{prompt_str.strip()}\nraw response:{score_raw}"
+                    f"Problem with content parsing:{standard_response['content']}"
                 )
                 raise
-            return {"score": None, "confidence": None, "flags": None, "n": None, "type": "other"}
-        return response_dict
+            parsed_content = {
+                "score": None,
+                "confidence": None,
+                "flags": None,
+                "n": None,
+                "type": "other",
+            }
+        if standard_response["logprobs"] is not None:
+            probability_scores = self.prompter.probability_scores(
+                standard_response["logprobs"]
+            )
+            # create a FullScore for both the weighted and the unweighted.
+            weighted_score: FullScore = {
+                "score": probability_scores["weighted"],
+                "confidence": probability_scores["weighted_confidence"],
+                "flags": parsed_content["flags"],
+                "n": probability_scores["n"],
+                "type": "weighted",
+            }
+            top_score: FullScore = {
+                "score": probability_scores["top"],
+                "confidence": probability_scores["top_confidence"],
+                "flags": parsed_content["flags"],
+                "n": 1,
+                "type": "top",
+            }
+            if (confidence_priority == "content") and parsed_content["confidence"]:
+                weighted_score["confidence"] = parsed_content["confidence"]
+                top_score["confidence"] = parsed_content["confidence"]
+
+            return [weighted_score, top_score]
+        else:
+            return [parsed_content]
 
     def add_model(self, name, finetunepath):
         self.models[name] = finetunepath
 
-    def _score_gpt(self, gptprompt: str | list[str],
-                   model: str = "first",
-                   top_probs: int = 0,
-                   raw: bool = False):
+    def _score_gpt(
+        self, gptprompt: str | list[str], model: str = "first", top_probs: int = 0
+    ) -> list[StandardAIResponse]:
         raise NotImplementedError
 
-    def _score_gpt_async(self, gptprompt,
-                   model: str = "first",
-                   top_probs: int = 0,
-                   raw: bool = False):
+    def _score_gpt_async(
+        self, gptprompt, model: str = "first", top_probs: int = 0, raw: bool = False
+    ):
         raise NotImplementedError
 
     def originality_batch(
@@ -128,10 +197,21 @@ class GPT_Base_Scorer:
         raise_errs: bool = False,
         batch_size: int = 20,
         top_probs: int = 0,
+        score_source: Literal["top", "weighted"] = "top",
+        confidence_priority: Literal["content", "probabilities"] = "probabilities",
         debug: bool = False,
         min_size_to_write_cache: int = 100,
         **kwargs,
     ):
+        """Get originality in a batch, with optional caching.
+
+        Args:
+            score_source: If using top_probs, which source to use for the score.
+                'top' uses the top completion, 'weighted' uses the weighted completion.
+                Ignored if top_probs=0, forced to 'top` if top_probs == 0.
+        """
+        if top_probs == 0:
+            score_source = "top"
 
         scores = []
         confidences = []
@@ -161,8 +241,10 @@ class GPT_Base_Scorer:
         nbatches = np.ceil(len(prompts) / batch_size).astype(int)
 
         for i in tqdm(range(nbatches)):
-            targetbatch = prompts[i * batch_size: (i + 1) * batch_size]
-            responsebatch = responses[i * batch_size: (i + 1) * batch_size]
+            targetbatch = prompts[i * batch_size : (i + 1) * batch_size]  # noqa: E203
+            responsebatch = responses[
+                i * batch_size : (i + 1) * batch_size  # noqa: E203
+            ]  # noqa: E203
 
             gptprompts = []
             for target, response, task_type, question, language in zip(
@@ -177,26 +259,32 @@ class GPT_Base_Scorer:
                         language=language,
                     )
                 )
-            scores_raw = self._score_gpt(gptprompts, model=model,
-                                         top_probs=top_probs,
-                                         raw=False)
-            for i, score_raw in enumerate(scores_raw):
-                score, confidence, flags = None, None, None
+            standard_responses = self._score_gpt(
+                gptprompts, model=model, top_probs=top_probs
+            )
+            for i, standard_response in enumerate(standard_responses):
                 try:
-                    response_dict = self.prompter.parse_content(score_raw, type="top")
-                    score = response_dict["score"]
-                    confidence = response_dict["confidence"]
-                    flags = response_dict["flags"]
+                    fullscores = self._parse_standard_response(
+                        standard_response,
+                        confidence_priority=confidence_priority,
+                        raise_errs=raise_errs,
+                    )
+                    if top_probs > 0:
+                        fullscore = (
+                            fullscores[0]
+                            if score_source == "weighted"
+                            else fullscores[1]
+                        )
                 except KeyboardInterrupt:
                     raise
-                except:
+                except:  # noqa: E722
                     if raise_errs:
                         print(f"GPT prompt: {gptprompts[i].strip()}")
-                        print(f"raw response: {score_raw}")
+                        print(f"raw response: {standard_response['content']}")
                         raise
-                scores.append(score)
-                confidences.append(confidence)
-                allflags.append(flags)
+                scores.append(fullscore["score"])
+                confidences.append(fullscore["confidence"])
+                allflags.append(fullscore["flags"])
 
         if self.cache:
             newly_scored = to_score.copy()
@@ -311,7 +399,7 @@ class GPT_Base_Scorer:
 
         try:
             elab = elabfunc_1(phrase)
-        except:
+        except:  # noqa: E722
             raise
             elab = None
         return elab

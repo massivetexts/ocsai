@@ -2,9 +2,7 @@ from .llm_base_prompter import (
     FullScore,
     LLM_Base_Prompter,
     LogProbPair,
-    FullScore,
     ResponseTypes,
-    StandardAIResponse,
     UsageStats,
 )
 
@@ -54,11 +52,12 @@ class GPT_Classic_Prompter(LLM_Base_Prompter):
 
     def _extract_content(self, choice) -> str:
         """Extract the content string from a response choice."""
-        if hasattr(choice, "content"):
-            content = choice.content
-        elif hasattr(choice, "logprobs"):
+        if hasattr(choice, "text"):
+            content = choice.text
+        elif hasattr(choice, "logprobs") and choice.logprobs is not None:
             content = "".join(choice.logprobs.tokens)
         else:
+            self.logger.error(choice)
             raise ValueError(
                 "Response object does not have a 'content' or 'logprobs' attribute."
             )
@@ -75,7 +74,7 @@ class GPT_Classic_Prompter(LLM_Base_Prompter):
     def _extract_token_logprobs(self, choice) -> list[LogProbPair] | None:
         """Extract the token log probabilities from a response choice
         If there are multiple choices, return a list of lists."""
-        if not hasattr(choice, "logprobs"):
+        if not hasattr(choice, "logprobs") or choice.logprobs is None:
             return None
         tokens = choice.logprobs.tokens
         toplogprobs = choice.logprobs.top_logprobs
@@ -86,28 +85,6 @@ class GPT_Classic_Prompter(LLM_Base_Prompter):
                 toplogprobs = toplogprobs[1:]
         score_logprobs = list(toplogprobs[0].items())
         return score_logprobs
-
-    def standardize_response(self, response) -> StandardAIResponse | list[StandardAIResponse]:
-        """Cast a response into the standard AI response format.
-        E.g. anthropic or openai responses into a common format."""
-        responses = []
-        n_responses = len(response.choices)
-        usage = self._extract_usage(response, divide_by=n_responses)
-
-        for choice in response.choices:
-            content = self._extract_content(choice)
-            logprobs = self._extract_token_logprobs(choice)
-
-            current: StandardAIResponse = {"content": content,
-                                           "logprobs": logprobs,
-                                           "usage": usage
-                                           }
-            responses.append(current)
-
-        if n_responses > 1:
-            return responses[0]
-        else:
-            return responses
 
     def parse_content(
         self, content: str, type: ResponseTypes = "other"

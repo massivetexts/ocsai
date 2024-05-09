@@ -1,5 +1,5 @@
-from .llm_base_prompter import LLM_Base_Prompter, StandardAIResponse
-from .llm_base_prompter import LogProbPair, FullScore, ResponseTypes
+from .llm_base_prompter import LLM_Base_Prompter
+from .llm_base_prompter import LogProbPair, FullScore, ResponseTypes, UsageStats
 import random
 import numpy as np
 import re
@@ -35,9 +35,9 @@ class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
         question_exclude_prob: float = 0,
         detail_exclude_prob: float = 0,
         no_flags: bool = False,
-    ):
+    ) -> str:
         # Initialize the random number generator with the provided seed
-        # no_flags exluded the FLAGS part of the prompt altogether
+        # no_flags excludes the FLAGS part of the prompt altogether
         if seed is not None:
             random.seed(seed)
 
@@ -108,24 +108,37 @@ class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
             response += f"FLAGS: {flags}"
         return response.strip()
 
-    def parse_content(self, content: str, type: ResponseTypes = "other") -> FullScore:
+    def parse_content(self, content: str, type: ResponseTypes = "other"
+                      ) -> FullScore:
         """
         Parse the response from the OCSAI dataset into a score, confidence, and flags
         """
-        score, confidence, flags = None, None, None
-        score = response_raw.split("SCORE:")[1].split("\n")[0]
-        if score == "null":
+        confidence: int | None = None
+        flags: list[str] | None = None
+
+        try:
+            score_str: str = content.split("SCORE:")[1].split("\n")[0]
+        except IndexError:
+            score_str = "null"
+        
+        if score_str == "null":
             score = None
         else:
-            score = float(score)
+            score = float(score_str)
 
-        if "CONFIDENCE: " in response_raw:
-            confidence = response_raw.split("CONFIDENCE: ")[1].split("\n")[0]
-            confidence = int(confidence)
+        if "CONFIDENCE: " in content:
+            try:
+                confidence_str: str = content.split("CONFIDENCE: ")[1].split("\n")[0]
+                confidence = int(confidence_str)
+            except IndexError:
+                confidence = None
 
-        if "FLAGS: " in response_raw:
-            flags = response_raw.split("FLAGS: ")[1].split("\n")[0].split(",")
-            flags = [f.strip() for f in flags]
+        if "FLAGS: " in content:
+            try:
+                flags_str: str = content.split("FLAGS: ")[1].split("\n")[0]
+                flags = [f.strip() for f in flags_str.split(",")]
+            except IndexError:
+                flags = None
 
         parsed: FullScore = {
             "score": score,
@@ -190,17 +203,45 @@ class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
             msgs.append(ast_msg)
         return msgs
 
-    def _extract_token_logprobs(self, response) -> list[LogProbPair]:
+    def _extract_content(self, choice) -> str:
+        """Extract the content string from a response choice."""
+        return choice.message.content
+
+    def _extract_usage(self, response, divide_by: int = 1) -> UsageStats:
+        """Extract usage statistics from a response."""
+        return {
+            "total": response.usage.total_tokens / divide_by,
+            "prompt": response.usage.prompt_tokens / divide_by,
+            "completion": response.usage.completion_tokens / divide_by,
+        }
+    
+    def _extract_token_logprobs(self, choice) -> list[LogProbPair] | None:
         """Extract the token log probabilities from a response."""
-        self.logger.warning(
-            "Chat models, even with temperature=0, exhibit more randomness "
-            "than classic models."
-        )
-        score_logprobs = [
-            (x.token, x.logprob)
-            for x in response.choices[0].logprobs.content[0].top_logprobs
-        ]
-        return score_logprobs
+        # FYI: Chat models, even with temperature=0, exhibit more 
+        # randomness than classic models and logprobs are less stable here
+        if choice.logprobs is None:
+            return None
+
+        # the content here is trickier to parse. It will be 'SCORE: x.y\n...' 
+        # - the first three tokens, can be skipped - for the digit before and
+        # after the colon.
+        whole_numbers: list[LogProbPair] = [(x.token, x.logprob) for x in choice.logprobs.content[3].top_logprobs]
+        tenths: list[LogProbPair] = [(x.token, x.logprob) for x in choice.logprobs.content[5].top_logprobs]
+
+        # calculate joint log probs
+        # \log P(X \cap Y) = \log P(X) + \log P(Y)
+        combined_log_probs = []
+        for w, log_prob_w in whole_numbers:
+            for t, log_prob_t in tenths:
+                logprobpair: LogProbPair = (
+                    f"SCORE: {w}.{t}\n",
+                    log_prob_w + log_prob_t
+                )
+                combined_log_probs.append(logprobpair)
+
+        # sort and trim just to original size * 2
+        combined_log_probs = sorted(combined_log_probs, key=lambda x: x[1], reverse=True)[:len(whole_numbers)*2]
+        return combined_log_probs
 
     def prepare_example_from_series(self, row, seed=None):
         """Parse a row of a DataFrame, with the following columns:

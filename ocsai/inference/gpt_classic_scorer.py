@@ -1,3 +1,4 @@
+from ..train.llm_base_prompter import StandardAIResponse
 from ..train import GPT_Classic_Prompter
 from .gpt_base_scorer import GPT_Base_Scorer
 
@@ -21,8 +22,7 @@ class GPT_Classic_Scorer(GPT_Base_Scorer):
 
     def _score_gpt(self, gptprompt: str | list[str],
                    model: str = "first",
-                   top_probs: int = 0,
-                   raw: bool = False):
+                   top_probs: int = 0) -> list[StandardAIResponse]:
         '''
         Score the prompt using the GPT client.
 
@@ -51,7 +51,4 @@ class GPT_Classic_Scorer(GPT_Base_Scorer):
             max_tokens=self.prompter.max_tokens,
         )
 
-        if raw:
-            return response
-        else:
-            return self.prompter.standardize_response(response)
+        return self.prompter.standardize_response(response)

@@ -1,4 +1,3 @@
-from typing import Optional
 import logging
 import numpy as np
 from typing import TypedDict, Literal
@@ -23,12 +22,13 @@ ResponseTypes = Literal["weighted", "top", "other"]
 
 FullScore = TypedDict(
     "FullScore",
-    {"score": float | None,
-     "confidence": int | None,
-     "flags": list[str] | None,
-     "n": Optional[int],
-     "type": ResponseTypes
-     }
+    {
+        "score": float | None,
+        "confidence": int | float | None,
+        "flags": list[str] | None,
+        "n": int | None,
+        "type": ResponseTypes,
+    },
 )
 
 LogProbPair = tuple[str, float]
@@ -42,7 +42,7 @@ UsageStats = TypedDict(
         "total": int | None,
         "prompt": int | None,
         "completion": int | None,
-    }
+    },
 )
 StandardAIResponse = TypedDict(
     "StandardAIResponse",
@@ -50,15 +50,15 @@ StandardAIResponse = TypedDict(
         "content": str,
         "logprobs": list[LogProbPair] | None,
         "usage": UsageStats | None,
-    }
+    },
 )
 
 
 class LLM_Base_Prompter:
-    sys_msg_text: Optional[str] = None
+    sys_msg_text: str | None = None
     max_tokens: int = 100
 
-    def __init__(self, logger: Optional[logging.Logger] = None):
+    def __init__(self, logger: logging.Logger | None = None):
         if logger:
             self.logger: logging.Logger = logger
         else:
@@ -79,11 +79,34 @@ class LLM_Base_Prompter:
     def craft_response(self, score, confidence=None, flags=None):
         """Craft a response for the language model, given a score, confidence, and flags"""
         raise NotImplementedError
+    
+    def _extract_choices(self, response) -> list:
+        """
+        Some LLMs give multiple choices, this returns them as 
+        an iterable, for standardization. Default assumes the 
+        OpenAI format.
+        """
+        return response.choices
 
-    def standardize_response(self, response) -> StandardAIResponse | list[StandardAIResponse]:
+    def standardize_response(self, response) -> list[StandardAIResponse]:
         """Cast a response into the standard AI response format.
         E.g. anthropic or openai responses into a common format."""
-        raise NotImplementedError
+        responses = []
+        n_responses = len(response.choices)
+        usage = self._extract_usage(response, divide_by=n_responses)
+
+        choices = self._extract_choices(response)
+        for choice in choices:
+            content = self._extract_content(choice)
+            logprobs = self._extract_token_logprobs(choice)
+
+            current: StandardAIResponse = {"content": content,
+                                           "logprobs": logprobs,
+                                           "usage": usage
+                                           }
+            responses.append(current)
+
+        return responses
 
     def _extract_content(self, response) -> str:
         """Extract the content string from a response."""
@@ -94,16 +117,21 @@ class LLM_Base_Prompter:
         raise NotImplementedError
 
     def _extract_token_logprobs(self, response) -> list[LogProbPair] | None:
-        """Extract the token log probabilities from a response or response choice."""
+        """Extract the token log probabilities from a response or response choice,
+        returning in a standardized format."""
         raise NotImplementedError
 
-    def _parse_token_probs(self, score_logprobs) -> list[ParsedProbPair]:
-        """Extract and parse the token probabilities from a response."""
+    def probability_scores(self, score_logprobs: list[LogProbPair]) -> ProbScores:
+        """From a standardized list of token log probabilities, return a dictionary of
+        weighted and top scores, and their confidences."""
+
+        # convert log probabilities to probabilities
         score_probs: list[ProbPair] = [
             (token, np.exp(log_prob)) for token, log_prob in score_logprobs
         ]
 
-        just_scores: list[ParsedProbPair] = []
+        # Try to parse the scores
+        token_probs: list[ParsedProbPair] = []
         for token, prob in score_probs:
             try:
                 parsed = self.parse_content(token, type="other")
@@ -112,11 +140,7 @@ class LLM_Base_Prompter:
                 continue
             if not score:
                 continue
-            just_scores.append((score, prob))
-        return just_scores
-
-    def prob_scores(self, response) -> ProbScores:
-        token_probs = self._parse_token_probs(response)
+            token_probs.append((score, prob))
 
         # Top Choice
         top_choice, confidence = token_probs[0]
@@ -143,7 +167,7 @@ class LLM_Base_Prompter:
             downstream - this method only parses the text content.
 
         Args:
-            response_raw (str): The text content response from the model
+            content (str): The text content response from the model
             type (str): What kind of response is this? "top" refers to the top completion,
                 "other" refers to another type of completion. This information is kept for
                 compatibility with log probability parsing.

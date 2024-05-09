@@ -8,6 +8,10 @@ class GPT_Classic2_Prompter(GPT_Classic_Prompter):
     '''
     max_tokens: int = 2
 
+    def _extract_content(self, choice) -> str:
+        """Extract the content string from a response choice."""
+        return choice.message.content
+
     def craft_prompt(self, item: str, response: str,
                      task_type: str | None = 'uses', question=None,
                      language='eng'):

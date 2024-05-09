@@ -1,8 +1,7 @@
-from typing import List, Union
 from .gpt_base_scorer import GPT_Base_Scorer
-from ..train import GPT_Classic_Chat_Prompter
+from ..train import GPT_Ocsai2_Prompter
 from tqdm.auto import tqdm
-from tqdm.asyncio import tqdm_asyncio
+# from tqdm.asyncio import tqdm_asyncio
 import asyncio
 
 GPTCHATMODELS = {
@@ -13,7 +12,7 @@ GPTCHATMODELS = {
 
 class GPT_Chat_Scorer(GPT_Base_Scorer):
 
-    DEFAULT_PROMPTER = GPT_Classic_Chat_Prompter
+    DEFAULT_PROMPTER = GPT_Ocsai2_Prompter
 
     def __init__(self, *args, **kwargs):
         if "model_dict" not in kwargs or not kwargs["model_dict"]:
@@ -61,10 +60,9 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
 
     def _score_gpt(
         self,
-        gptprompt: str | List[str],
+        gptprompt: str | list[str],
         model: str = "first",
         top_probs: int = 0,
-        raw: bool = False,
         runasync=False,
     ):
         """
@@ -84,13 +82,10 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
                 self._score_gpt_async(gptprompt, model, raw=True)
             )
 
-            if raw:
-                return all_responses
-            else:
-                content = [
-                    response.choices[0].message.content for response in all_responses
-                ]
-                return content
+            content = [
+                response.choices[0].message.content for response in all_responses
+            ]
+            return content
 
         if model == "first":
             model = self.models[0]
@@ -131,10 +126,9 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
             )
             all_responses.append(response)
 
-        if raw:
-            return all_responses
-        else:
-        return [
-            self.prompter.standardize_response(response)
-            for response in all_responses
-        ]
+        all_standardized = []
+        for response in all_responses:
+            standard_response = self.prompter.standardize_response(response)
+            assert len(standard_response) == 1, "Only one response expected for chat model"
+            all_standardized += standard_response
+        return all_standardized
