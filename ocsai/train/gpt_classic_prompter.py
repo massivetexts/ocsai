@@ -26,7 +26,7 @@ class GPT_Classic_Prompter(LLM_Base_Prompter):
                 "Only 'uses' task type is supported with Classic Prompter"
             )
         # the trailing space is distracting to me, but it's how it was trained!
-        prompt_template = "AUT Prompt:{}\nResponse:{}\nScore:\n "
+        prompt_template = "AUT Prompt:{}\nResponse:{}\nScore:\n"
 
         if question:
             self.logger.warning("Question is not supported with Classic Prompter")
@@ -79,10 +79,11 @@ class GPT_Classic_Prompter(LLM_Base_Prompter):
         tokens = choice.logprobs.tokens
         toplogprobs = choice.logprobs.top_logprobs
         if len(tokens) > 1:
-            self.logger.warn("Only one token expected. Trying our best to parse anyway")
             if tokens[0].strip() == "":
                 tokens = tokens[1:]
                 toplogprobs = toplogprobs[1:]
+            if len(tokens) > 1:
+                self.logger.warn("Only one token expected, after stripping whitespace. Just using first token")
         score_logprobs = list(toplogprobs[0].items())
         return score_logprobs
 

@@ -57,6 +57,7 @@ StandardAIResponse = TypedDict(
 class LLM_Base_Prompter:
     sys_msg_text: str | None = None
     max_tokens: int = 100
+    stop_char: str | None = None
 
     def __init__(self, logger: logging.Logger | None = None):
         if logger:
@@ -116,9 +117,13 @@ class LLM_Base_Prompter:
         """Extract usage statistics from a response or response choice."""
         raise NotImplementedError
 
-    def _extract_token_logprobs(self, response) -> list[LogProbPair] | None:
+    def _extract_token_logprobs(self, choice) -> list[LogProbPair] | None:
         """Extract the token log probabilities from a response or response choice,
         returning in a standardized format."""
+        if not hasattr(choice, "logprobs"):
+            return None
+        elif choice.logprobs is None:
+            return None
         raise NotImplementedError
 
     def probability_scores(self, score_logprobs: list[LogProbPair]) -> ProbScores:

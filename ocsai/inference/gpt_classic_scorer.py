@@ -4,7 +4,7 @@ from .gpt_base_scorer import GPT_Base_Scorer
 
 
 GPTCLASSICMODELS = {
-    "ocsai-babbage2": "ft:babbage-002:peter-organisciak:gt-main2-epochs2:8fDSqNqU",
+    "ocsai-babbage2": "ft:babbage-002:peter-organisciak:gt-main2:8fCPIoCY",
     "ocsai-davinci2": "ft:davinci-002:peter-organisciak:gt-main2-epochs2:8fE6TmoV",
 }
 
@@ -37,6 +37,12 @@ class GPT_Classic_Scorer(GPT_Base_Scorer):
 
         logprobs: int | None = None
         if top_probs > 0:
+            max_probs = 5
+            if top_probs > max_probs:
+                self.logger.warning(
+                    f"OpenAI API only supports {max_probs} logprobs at a time. Forcing top_probs={max_probs}."
+                )
+                top_probs = max_probs
             logprobs = top_probs
 
         response = self.client.completions.create(

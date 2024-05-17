@@ -4,7 +4,8 @@ from .gpt_classic_prompter import GPT_Classic_Prompter, LogProbPair
 class GPT_Classic_Chat_Prompter(GPT_Classic_Prompter):
     ''' The format used in the original LLM paper, adjusted slightly to work with chat.'''
     sys_msg_text = "You score originality in the alternate uses task."
-    max_tokens = 25
+    max_tokens = 2
+    stop_char = '\n'
 
     def _extract_content(self, choice) -> str:
         """Extract the content string from a response choice."""
@@ -31,10 +32,14 @@ class GPT_Classic_Chat_Prompter(GPT_Classic_Prompter):
             msgs.append(ast_msg)
         return msgs
 
-    def _extract_token_logprobs(self, choice) -> list[LogProbPair]:
+    def _extract_token_logprobs(self, choice) -> list[LogProbPair] | None:
         '''Extract the token log probabilities from a response.'''
         # FYI: Chat models, even with temperature=0, exhibit more randomness "
         # than classic models.
+        if not hasattr(choice, "logprobs"):
+            return None
+        elif choice.logprobs is None:
+            return None
         score_logprobs = [(x.token, x.logprob)
                           for x in choice.logprobs.content[0].top_logprobs]
         return score_logprobs

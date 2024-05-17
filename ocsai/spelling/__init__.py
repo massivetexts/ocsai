@@ -32,7 +32,6 @@ def fix_kids_spelling(question: str,
     prompt = response_template.format(q=question,
                                       r=response,
                                       identify_desc=identity_desc)
-    print(prompt)
     content = generic_llm(text=prompt,
                           sysmsg="You FIX children's spelling.",
                           client=client,

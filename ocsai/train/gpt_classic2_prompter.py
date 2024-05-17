@@ -18,7 +18,7 @@ class GPT_Classic2_Prompter(GPT_Classic_Prompter):
         task_type = task_type.capitalize()
         if task_type not in known_task_type_codes:
             self.logger.debug(f"Task type {task_type} not a known type.")
-        prompt_template = f'DT {task_type} Prompt:{item}\nResponse:{response}\nScore:\n'
+        prompt_template = f'DT {task_type} Prompt:{item}\nResponse:{response}\nScore:\n '
 
         if question:
             self.logger.warning("Question is not supported with Classic Prompter")

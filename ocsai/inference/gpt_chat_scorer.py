@@ -5,8 +5,8 @@ from tqdm.auto import tqdm
 import asyncio
 
 GPTCHATMODELS = {
-    "ocsai_1.5_small": "ft:gpt-3.5-turbo-1106:peter-organisciak:ocsai-small-1-24:8cmALwWt",
     "ocsai_1.5_full": "ft:gpt-3.5-turbo-1106:peter-organisciak:ocsai-full-1-24:8d5RLryO",
+    "ocsai_1.5_small": "ft:gpt-3.5-turbo-1106:peter-organisciak:ocsai-small-1-24:8cmALwWt",
 }
 
 
@@ -95,12 +95,23 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
 
         logprobs: int | None = None
         if top_probs > 0:
-            assert top_probs <= 20, "OpenAI API only supports 20 logprobs at a time."
+            max_probs = 20
+            if top_probs > max_probs:
+                self.logger.warning(
+                    f"OpenAI API only supports {max_probs} logprobs at a time. Forcing top_probs={max_probs}."
+                )
+                top_probs = max_probs
             logprobs = top_probs
 
         SYS_MSG = {"role": "system", "content": self.prompter.sys_msg_text}
 
-        for prompt in tqdm(gptprompt):
+        # if len(gptprompt) is less than 10, turn off tqdm
+        if len(gptprompt) > 10:
+            wrapped_gptprompt = tqdm(gptprompt)
+        else:
+            wrapped_gptprompt = gptprompt
+
+        for prompt in wrapped_gptprompt:
             # May need to eventually switch
             # to multi-threading - a headache in Python - or TypeScript'
             self.logger.debug(
@@ -121,7 +132,7 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
                 # Just score is 6 tokens;
                 # score+confidence is 13 tokens;
                 # score+confidence+flags is still unknown
-                # stop='\n', STOP on newline only if aiming for score only
+                stop=self.prompter.stop_char,  # STOP on newline only if aiming for score only
                 max_tokens=self.prompter.max_tokens,
             )
             all_responses.append(response)

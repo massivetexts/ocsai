@@ -87,6 +87,7 @@ class GPT_Base_Scorer:
         top_probs: int = 0,
         raise_errs: bool = False,
         confidence_priority: Literal["content", "probabilities"] = "probabilities",
+        progressive_weighted: bool = False,
         **kwargs,
     ) -> list[FullScore]:
         """
@@ -98,6 +99,11 @@ class GPT_Base_Scorer:
             If 0, only return the top completion.
 
         confidence_priority: bool: If getting confidence from multiple sources, which one to keep.
+
+        progressive_weighted: If true, will return a FullScore for each *n*
+            in the weighted completion. That is, if log probs were collected for
+            10 possibilities, will return a weighted score for the first 1, 2, 3, etc.
+            This is primary useful for evaluation of the approach.
 
         Returns:
         - A full score item, or two items if top_probs > 0 (one weighted, one top)
@@ -115,6 +121,7 @@ class GPT_Base_Scorer:
             standard_response[0],
             confidence_priority=confidence_priority,
             raise_errs=raise_errs,
+            progressive_weighted=progressive_weighted
         )
 
     def _parse_standard_response(
@@ -122,6 +129,7 @@ class GPT_Base_Scorer:
         standard_response: StandardAIResponse,
         raise_errs: bool = False,
         confidence_priority: Literal["content", "probabilities"] = "probabilities",
+        progressive_weighted: bool = False
     ) -> list[FullScore]:
         """Take a single standard response, parse the content and log probs.
         Returns a list of FullScore items - one for the top completion, and one
@@ -147,17 +155,24 @@ class GPT_Base_Scorer:
                 "type": "other",
             }
         if standard_response["logprobs"] is not None:
-            probability_scores = self.prompter.probability_scores(
-                standard_response["logprobs"]
-            )
-            # create a FullScore for both the weighted and the unweighted.
-            weighted_score: FullScore = {
-                "score": probability_scores["weighted"],
-                "confidence": probability_scores["weighted_confidence"],
-                "flags": parsed_content["flags"],
-                "n": probability_scores["n"],
-                "type": "weighted",
-            }
+            weighted_scores: list[FullScore] = []
+            if progressive_weighted:
+                probs_to_parse = [standard_response["logprobs"][:i] 
+                                  for i in range(2, len(standard_response["logprobs"]) + 1)]
+            else:
+                probs_to_parse = [standard_response["logprobs"]]
+            
+            for logprobs in probs_to_parse:
+                probability_scores = self.prompter.probability_scores(logprobs)
+                
+                weighted_score: FullScore = {
+                    "score": probability_scores["weighted"],
+                    "confidence": probability_scores["weighted_confidence"],
+                    "flags": parsed_content["flags"],
+                    "n": probability_scores["n"],
+                    "type": "weighted",
+                }
+                weighted_scores.append(weighted_score)
             top_score: FullScore = {
                 "score": probability_scores["top"],
                 "confidence": probability_scores["top_confidence"],
@@ -169,7 +184,7 @@ class GPT_Base_Scorer:
                 weighted_score["confidence"] = parsed_content["confidence"]
                 top_score["confidence"] = parsed_content["confidence"]
 
-            return [weighted_score, top_score]
+            return [*weighted_scores, top_score]
         else:
             return [parsed_content]
 
@@ -209,6 +224,9 @@ class GPT_Base_Scorer:
             score_source: If using top_probs, which source to use for the score.
                 'top' uses the top completion, 'weighted' uses the weighted completion.
                 Ignored if top_probs=0, forced to 'top` if top_probs == 0.
+
+            progressive_weighted: If true, will return a FullScore for each *n*
+                in the weighted completion.
         """
         if top_probs == 0:
             score_source = "top"
@@ -268,6 +286,7 @@ class GPT_Base_Scorer:
                         standard_response,
                         confidence_priority=confidence_priority,
                         raise_errs=raise_errs,
+                        progressive_weighted=False # as it stands, not used downstream
                     )
                     if top_probs > 0:
                         fullscore = (
