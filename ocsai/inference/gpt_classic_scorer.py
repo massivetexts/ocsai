@@ -21,7 +21,7 @@ class GPT_Classic_Scorer(GPT_Base_Scorer):
         super().__init__(*args, **kwargs)
 
     def _score_gpt(self, gptprompt: str | list[str],
-                   model: str = "first",
+                   model_id: str,
                    top_probs: int = 0) -> list[StandardAIResponse]:
         '''
         Score the prompt using the GPT client.
@@ -32,9 +32,6 @@ class GPT_Classic_Scorer(GPT_Base_Scorer):
         top_probs is the number of top options to return. If 0, don't return
             the log probabilities. If 1, get log probabilities for just one option.
         '''
-        if model == "first":
-            model = self.models[0]
-
         logprobs: int | None = None
         if top_probs > 0:
             max_probs = 5
@@ -46,7 +43,7 @@ class GPT_Classic_Scorer(GPT_Base_Scorer):
             logprobs = top_probs
 
         response = self.client.completions.create(
-            model=self._models[model],
+            model=model_id,
             prompt=gptprompt,
             temperature=0,
             n=1,

@@ -110,11 +110,20 @@ class GPT_Base_Scorer:
         """
         if model == "first":
             model = self.models[0]
+
+        if model in self._models:
+            model_id = self._models[model]
+        else:
+            model_id = model
+
         prompt_str = self.prompter.craft_prompt(
             target, response, question=question, task_type=task_type, language=language
         )
+
+        # Note: _score_gpt is implemented in subclasses, and it takes the full
+        # model name
         standard_response = self._score_gpt(
-            prompt_str, model=model, top_probs=top_probs
+            prompt_str, model_id=model_id, top_probs=top_probs
         )
         assert len(standard_response) == 1  # expected only one here
         return self._parse_standard_response(
@@ -192,7 +201,7 @@ class GPT_Base_Scorer:
         self.models[name] = finetunepath
 
     def _score_gpt(
-        self, gptprompt: str | list[str], model: str = "first", top_probs: int = 0
+        self, gptprompt: str | list[str], model_id: str, top_probs: int = 0
     ) -> list[StandardAIResponse]:
         raise NotImplementedError
 

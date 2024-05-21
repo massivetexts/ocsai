@@ -61,7 +61,7 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
     def _score_gpt(
         self,
         gptprompt: str | list[str],
-        model: str = "first",
+        model_id: str,
         top_probs: int = 0,
         runasync=False,
     ):
@@ -87,8 +87,6 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
             ]
             return content
 
-        if model == "first":
-            model = self.models[0]
         all_responses = []
         if type(gptprompt) is str:
             gptprompt = [gptprompt]
@@ -122,7 +120,7 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
             messages = [SYS_MSG, {"role": "user", "content": prompt}]
 
             response = self.client.chat.completions.create(
-                model=self._models[model],
+                model=model_id,
                 messages=messages,
                 temperature=0,
                 n=1,
