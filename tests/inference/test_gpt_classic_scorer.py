@@ -19,7 +19,7 @@ def test_gpt_classic_scorer_initialization():
 def test_score_method():
     scorer = GPT_Classic_Scorer(cache=None, model_dict=ocsai1_classic_models)
     result = scorer.score('Pants', 'makeshift flag')
-    assert result == {'score': 3.5, 'confidence': None, 'flags': None}
+    assert result == [{'score': 3.5, 'confidence': None, 'flags': None, 'n': 1, 'type': 'top'}]
 
 
 # Test originality method
@@ -42,6 +42,19 @@ def test_originality_batch_method():
     results = scorer.originality_batch(['Pants', 'Pants'], ['makeshift flag', 'make a parachute'], model='ocsai-davinci2')
     expected_results = [{'score': 3.3, 'confidence': None, 'flags': None}, {'score': 2.7, 'confidence': None, 'flags': None}]
     assert results == expected_results
+
+
+# Test originality_batch with questions instead of prompts. Should throw a value error
+def test_originality_batch_with_questions():
+    scorer = GPT_Classic_Scorer(cache=None, model_dict=ocsai1_classic_models)
+    try:
+        results = scorer.originality_batch(prompts=[],
+                                           responses=['makeshift flag', 'make a parachute'],
+                                           questions=['What is a surprising use for pants?']*2,
+                                           model='ocsai-babbage2')
+        assert False
+    except ValueError:
+        assert True
 
 
 # Test crafting prompt

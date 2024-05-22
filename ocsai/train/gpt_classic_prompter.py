@@ -29,7 +29,8 @@ class GPT_Classic_Prompter(LLM_Base_Prompter):
         prompt_template = "AUT Prompt:{}\nResponse:{}\nScore:\n"
 
         if question:
-            self.logger.warning("Question is not supported with Classic Prompter")
+            raise ValueError("Question is not supported with Classic Prompter")
+
         if language is not None and language != "eng":
             self.logger.warning(
                 "Only 'eng' language is supported with Classic Prompter"

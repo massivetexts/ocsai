@@ -41,10 +41,17 @@ class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
         if seed is not None:
             random.seed(seed)
 
+        if not question and not task_type:
+            self.logger.warning("No task_type or question provided. Assuming task_type='uses'")
+            task_type = "uses"
         if not question:
             question_exclude_prob = 1
         if not language:
             language_exclude_prob = 1
+        if not task_type:
+            task_type_exclude_prob = 1
+        if not question:
+            question_exclude_prob = 1
 
         components = {
             "ACTION": (
@@ -120,7 +127,7 @@ class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
             score_str: str = content.split("SCORE:")[1].split("\n")[0]
         except IndexError:
             score_str = "null"
-        
+
         if score_str == "null":
             score = None
         else:
@@ -214,15 +221,15 @@ class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
             "prompt": response.usage.prompt_tokens / divide_by,
             "completion": response.usage.completion_tokens / divide_by,
         }
-    
+
     def _extract_token_logprobs(self, choice) -> list[LogProbPair] | None:
         """Extract the token log probabilities from a response."""
-        # FYI: Chat models, even with temperature=0, exhibit more 
+        # FYI: Chat models, even with temperature=0, exhibit more
         # randomness than classic models and logprobs are less stable here
         if choice.logprobs is None:
             return None
 
-        # the content here is trickier to parse. It will be 'SCORE: x.y\n...' 
+        # the content here is trickier to parse. It will be 'SCORE: x.y\n...'
         # - the first three tokens, can be skipped - for the digit before and
         # after the colon.
         whole_numbers: list[LogProbPair] = [(x.token, x.logprob) for x in choice.logprobs.content[3].top_logprobs]

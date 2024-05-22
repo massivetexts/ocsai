@@ -48,12 +48,12 @@ class GPT_Base_Scorer:
 
     def originality(
         self,
-        target,
-        response,
-        question=None,
-        task_type="uses",
-        language="eng",
-        model="first",
+        target: str | None,
+        response: str,
+        question: str | None = None,
+        task_type: str | None = "uses",
+        language: str | None = "eng",
+        model: str = "first",
         raise_errs=False,
         score_source: Literal["top", "weighted"] = "top",
         **kwargs,
@@ -76,9 +76,19 @@ class GPT_Base_Scorer:
             score = scores[0] if score_source == "weighted" else scores[1]
         return score
 
+    def _select_model_id(self, model):
+        if model == "first":
+            model = self.models[0]
+
+        if model in self._models:
+            model_id = self._models[model]
+        else:
+            model_id = model
+        return model_id
+
     def score(
         self,
-        target: str,
+        target: str | None,
         response: str,
         question: str | None = None,
         task_type: str | None = "uses",
@@ -108,13 +118,7 @@ class GPT_Base_Scorer:
         Returns:
         - A full score item, or two items if top_probs > 0 (one weighted, one top)
         """
-        if model == "first":
-            model = self.models[0]
-
-        if model in self._models:
-            model_id = self._models[model]
-        else:
-            model_id = model
+        model_id = self._select_model_id(model)
 
         prompt_str = self.prompter.craft_prompt(
             target, response, question=question, task_type=task_type, language=language
@@ -212,7 +216,7 @@ class GPT_Base_Scorer:
 
     def originality_batch(
         self,
-        prompts: list[str],
+        prompts: list[str | None] | str | None,
         responses: list[str],
         questions: list[str | None] | str | None = None,
         task_types: list[str | None] | str | None = None,
@@ -243,39 +247,49 @@ class GPT_Base_Scorer:
         scores = []
         confidences = []
         allflags = []
-        responses = [r.strip() for r in responses]
-        if (type(task_types) is str) or (task_types is None):
-            task_types = [task_types] * len(prompts)
-        if (type(languages) is str) or (languages is None):
-            languages = [languages] * len(prompts)
-        if (type(questions) is str) or (questions is None):
-            questions = [questions] * len(prompts)
 
-        assert len(prompts) == len(responses)
-        if model == "first":
-            model = self.models[0]
+        assert not (questions is None and prompts is None)
+
+        responses = [r.strip() for r in responses]
+
+        def cast_to_list(x):
+            if type(x) is list and len(x) == 0:
+                x = None
+            if (type(x) is str) or (x is None):
+                x = [x] * len(responses)
+            return x
+
+        prompts = cast_to_list(prompts)
+        questions = cast_to_list(questions)
+        task_types = cast_to_list(task_types)
+        languages = cast_to_list(languages)
+
+        model_id = self._select_model_id(model)
 
         if self.cache:
             df = pd.DataFrame(
                 list(zip(prompts, responses, questions, task_types, languages)),
                 columns=self.cache.base_cols[:-1],
             )
-            df["model"] = self._models[model]
+            df["model"] = self._models[model_id]
             df = df.astype({col: "object" for col in self.cache.base_cols})
             to_score, cache_results = self.cache.get_cache_scores(df)
-            prompts, responses = to_score.prompt.tolist(), to_score.response.tolist()
+            prompts = to_score.prompt.tolist()
+            questions = to_score.question.tolist()
+            responses = to_score.response.tolist()
 
-        nbatches = np.ceil(len(prompts) / batch_size).astype(int)
+        nbatches = np.ceil(len(responses) / batch_size).astype(int)
 
         for i in tqdm(range(nbatches)):
-            targetbatch = prompts[i * batch_size : (i + 1) * batch_size]  # noqa: E203
-            responsebatch = responses[
-                i * batch_size : (i + 1) * batch_size  # noqa: E203
-            ]  # noqa: E203
+            start, end = i * batch_size, (i + 1) * batch_size
 
             gptprompts = []
             for target, response, task_type, question, language in zip(
-                targetbatch, responsebatch, task_types, questions, languages
+                prompts[start:end],
+                responses[start:end],
+                task_types[start:end],
+                questions[start:end],
+                languages[start:end]
             ):
                 gptprompts.append(
                     self.prompter.craft_prompt(
@@ -287,7 +301,7 @@ class GPT_Base_Scorer:
                     )
                 )
             standard_responses = self._score_gpt(
-                gptprompts, model=model, top_probs=top_probs
+                gptprompts, model_id=model_id, top_probs=top_probs
             )
             for i, standard_response in enumerate(standard_responses):
                 try:
@@ -295,7 +309,7 @@ class GPT_Base_Scorer:
                         standard_response,
                         confidence_priority=confidence_priority,
                         raise_errs=raise_errs,
-                        progressive_weighted=False # as it stands, not used downstream
+                        progressive_weighted=False  # as it stands, not used downstream
                     )
                     if top_probs > 0:
                         fullscore = (
@@ -303,6 +317,8 @@ class GPT_Base_Scorer:
                             if score_source == "weighted"
                             else fullscores[1]
                         )
+                    else:
+                        fullscore = fullscores[0]
                 except KeyboardInterrupt:
                     raise
                 except:  # noqa: E722
@@ -338,9 +354,16 @@ class GPT_Base_Scorer:
                 if r.strip() == "":
                     logging.debug("Blank response detected. Forcing score to 1.")
                     s = 1
-                if c is None or np.isnan(c):
+                if c is not None and np.isnan(c):
                     c = None
-                if f is None or np.isnan(f):
+
+                def parse_none_strings(x):
+                    if x.lower() in ['none', 'na', 'nan', 'null']:
+                        return None
+                if type(f) is list:
+                    f = [x for x in f if parse_none_strings(x) is not None]
+
+                if f is not None and (len(f) == 0):
                     f = None
                 final.append({"score": s, "confidence": c, "flags": f})
             return final
@@ -351,7 +374,7 @@ class GPT_Base_Scorer:
         model: str = "first",
         raise_errs: bool = False,
         batch_size: int = 20,
-        prompt_col: str = "prompt",
+        prompt_col: str | None = "prompt",
         response_col: str | None = "response",
         question_col: str | None = "question",
         type_col: str | None = "type",
@@ -363,10 +386,6 @@ class GPT_Base_Scorer:
         force_overwrite: bool = False,
     ):
         """Run originality scoring on a dataframe, and append the results to a new dataframe"""
-        if question_col in dataframe.columns:
-            questions = dataframe[question_col]
-        else:
-            questions = None
 
         if type_col in dataframe.columns:
             task_types = dataframe[type_col]
@@ -378,13 +397,13 @@ class GPT_Base_Scorer:
         else:
             languages = "eng"
 
-        assert prompt_col in dataframe.columns
+        assert (prompt_col in dataframe.columns) or (question_col in dataframe.columns)
         assert response_col in dataframe.columns
 
         scores = self.originality_batch(
-            dataframe[prompt_col],
-            dataframe[response_col],
-            questions=questions,
+            prompts=dataframe[prompt_col] if prompt_col in dataframe.columns else None,
+            responses=dataframe[response_col],
+            questions=dataframe[question_col] if question_col in dataframe.columns else None,
             task_types=task_types,
             languages=languages,
             model=model,
