@@ -252,30 +252,30 @@ class GPT_Base_Scorer:
 
         responses = [r.strip() for r in responses]
 
-        def cast_to_list(x):
+        def cast_to_list(x) -> list[str | None]:
             if type(x) is list and len(x) == 0:
                 x = None
             if (type(x) is str) or (x is None):
                 x = [x] * len(responses)
             return x
 
-        prompts = cast_to_list(prompts)
-        questions = cast_to_list(questions)
-        task_types = cast_to_list(task_types)
-        languages = cast_to_list(languages)
+        promptsl: list[str | None] = cast_to_list(prompts)
+        questionsl: list[str | None] = cast_to_list(questions)
+        task_typesl: list[str | None] = cast_to_list(task_types)
+        languagesl: list[str | None] = cast_to_list(languages)
 
         model_id = self._select_model_id(model)
 
         if self.cache:
             df = pd.DataFrame(
-                list(zip(prompts, responses, questions, task_types, languages)),
+                list(zip(promptsl, responses, questionsl, task_typesl, languagesl)),
                 columns=self.cache.base_cols[:-1],
             )
-            df["model"] = self._models[model_id]
+            df["model"] = model_id
             df = df.astype({col: "object" for col in self.cache.base_cols})
             to_score, cache_results = self.cache.get_cache_scores(df)
-            prompts = to_score.prompt.tolist()
-            questions = to_score.question.tolist()
+            promptsl = to_score.prompt.tolist()
+            questionsl = to_score.question.tolist()
             responses = to_score.response.tolist()
 
         nbatches = np.ceil(len(responses) / batch_size).astype(int)
@@ -285,11 +285,11 @@ class GPT_Base_Scorer:
 
             gptprompts = []
             for target, response, task_type, question, language in zip(
-                prompts[start:end],
+                promptsl[start:end],
                 responses[start:end],
-                task_types[start:end],
-                questions[start:end],
-                languages[start:end]
+                task_typesl[start:end],
+                questionsl[start:end],
+                languagesl[start:end]
             ):
                 gptprompts.append(
                     self.prompter.craft_prompt(
