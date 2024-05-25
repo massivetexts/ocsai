@@ -1,57 +1,7 @@
 import logging
+from ..types import LogProbPair, ParsedProbPair, ProbPair, ProbScores, ResponseTypes, StandardAIResponse, FullScore, UsageStats
 import numpy as np
 from typing import TypedDict, Literal
-
-
-ProbScores = TypedDict(
-    "ProbScores",
-    {
-        "weighted": float,
-        "weighted_confidence": float,
-        "top": float,
-        "top_confidence": float,
-        "n": int,
-    },
-)
-
-# When parsing a response, what was the source for the data?
-# top: The top completion
-# weighted: A weighted average of all completions
-# other: Something else
-ResponseTypes = Literal["weighted", "top", "other"]
-
-FullScore = TypedDict(
-    "FullScore",
-    {
-        "score": float | None,
-        "confidence": int | float | None,
-        "flags": list[str] | None,
-        "n": int | None,
-        "type": ResponseTypes,
-    },
-)
-
-LogProbPair = tuple[str, float]
-ProbPair = tuple[str, float]
-ParsedProbPair = tuple[float, float]
-
-# a format for a standard AI response, for openai or other clients to be cast into
-UsageStats = TypedDict(
-    "UsageStats",
-    {
-        "total": int | None,
-        "prompt": int | None,
-        "completion": int | None,
-    },
-)
-StandardAIResponse = TypedDict(
-    "StandardAIResponse",
-    {
-        "content": str,
-        "logprobs": list[LogProbPair] | None,
-        "usage": UsageStats | None,
-    },
-)
 
 
 class LLM_Base_Prompter:
@@ -79,51 +29,6 @@ class LLM_Base_Prompter:
 
     def craft_response(self, score, confidence=None, flags=None):
         """Craft a response for the language model, given a score, confidence, and flags"""
-        raise NotImplementedError
-    
-    def _extract_choices(self, response) -> list:
-        """
-        Some LLMs give multiple choices, this returns them as 
-        an iterable, for standardization. Default assumes the 
-        OpenAI format.
-        """
-        return response.choices
-
-    def standardize_response(self, response) -> list[StandardAIResponse]:
-        """Cast a response into the standard AI response format.
-        E.g. anthropic or openai responses into a common format."""
-        responses = []
-        n_responses = len(response.choices)
-        usage = self._extract_usage(response, divide_by=n_responses)
-
-        choices = self._extract_choices(response)
-        for choice in choices:
-            content = self._extract_content(choice)
-            logprobs = self._extract_token_logprobs(choice)
-
-            current: StandardAIResponse = {"content": content,
-                                           "logprobs": logprobs,
-                                           "usage": usage
-                                           }
-            responses.append(current)
-
-        return responses
-
-    def _extract_content(self, response) -> str:
-        """Extract the content string from a response."""
-        raise NotImplementedError
-
-    def _extract_usage(self, response, divide_by=1) -> UsageStats | None:
-        """Extract usage statistics from a response or response choice."""
-        raise NotImplementedError
-
-    def _extract_token_logprobs(self, choice) -> list[LogProbPair] | None:
-        """Extract the token log probabilities from a response or response choice,
-        returning in a standardized format."""
-        if not hasattr(choice, "logprobs"):
-            return None
-        elif choice.logprobs is None:
-            return None
         raise NotImplementedError
 
     def probability_scores(self, score_logprobs: list[LogProbPair]) -> ProbScores:

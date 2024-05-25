@@ -3,7 +3,9 @@ import numpy as np
 from tqdm import tqdm
 from pathlib import Path
 import anthropic
+from ..types import LogProbPair, StandardAIResponse, UsageStats
 import openai
+
 
 
 def generic_llm(text,
@@ -12,7 +14,7 @@ def generic_llm(text,
                 model: str = 'gpt-3.5-turbo',
                 temperature: float = 0.0,
                 max_tokens: int = 300,
-                ) -> str:
+                ) -> StandardAIResponse:
     '''Run an openai or anthropic api call, based on the supplied client.'''
     common_args = {
         'model': model,
@@ -40,8 +42,11 @@ def generic_llm(text,
         content = response.choices[0].message.content
     else:
         raise ValueError("client must be either an anthropic.Anthropic or openai.OpenAI object.")
-    return content
-
+    return {
+        "content": content,
+        "logprobs": list[LogProbPair] | None,
+        "usage": UsageStats | None,
+    }
 
 def can_render_md_html():
     try:

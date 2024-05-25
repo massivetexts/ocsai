@@ -1,7 +1,7 @@
-from ..train.llm_base_prompter import StandardAIResponse
-from ..train import GPT_Classic_Prompter
+from ..types import StandardAIResponse
+from ..train import GPT_Ocsai1_Prompter
 from .gpt_base_scorer import GPT_Base_Scorer
-
+from ..llm_interface import OpenAILegacyInterface
 
 GPTCLASSICMODELS = {
     "ocsai-babbage2": "ft:babbage-002:peter-organisciak:gt-main2:8fCPIoCY",
@@ -11,7 +11,8 @@ GPTCLASSICMODELS = {
 
 class GPT_Classic_Scorer(GPT_Base_Scorer):
 
-    DEFAULT_PROMPTER = GPT_Classic_Prompter
+    DEFAULT_PROMPTER = GPT_Ocsai1_Prompter
+    chat_interface = OpenAILegacyInterface()
 
     def __init__(self, *args, **kwargs):
         if "model_dict" not in kwargs or not kwargs["model_dict"]:
@@ -54,4 +55,4 @@ class GPT_Classic_Scorer(GPT_Base_Scorer):
             max_tokens=self.prompter.max_tokens,
         )
 
-        return self.prompter.standardize_response(response)
+        return self.chat_interface.standardize_response(response)

@@ -1,9 +1,8 @@
 from .llm_base_prompter import LLM_Base_Prompter
-from .llm_base_prompter import LogProbPair, FullScore, ResponseTypes, UsageStats
+from ..types import LogProbPair, FullScore, ResponseTypes, UsageStats
 import random
 import numpy as np
 import re
-
 
 class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
     """The new format, introduced with Ocsai 1.5."""
@@ -209,18 +208,6 @@ class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
             }
             msgs.append(ast_msg)
         return msgs
-
-    def _extract_content(self, choice) -> str:
-        """Extract the content string from a response choice."""
-        return choice.message.content
-
-    def _extract_usage(self, response, divide_by: int = 1) -> UsageStats:
-        """Extract usage statistics from a response."""
-        return {
-            "total": response.usage.total_tokens / divide_by,
-            "prompt": response.usage.prompt_tokens / divide_by,
-            "completion": response.usage.completion_tokens / divide_by,
-        }
 
     def _extract_token_logprobs(self, choice) -> list[LogProbPair] | None:
         """Extract the token log probabilities from a response."""

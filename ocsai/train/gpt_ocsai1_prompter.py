@@ -1,13 +1,8 @@
-from .llm_base_prompter import (
-    FullScore,
-    LLM_Base_Prompter,
-    LogProbPair,
-    ResponseTypes,
-    UsageStats,
-)
+from .llm_base_prompter import LLM_Base_Prompter
+from ..types import FullScore, LogProbPair, ResponseTypes, UsageStats
 
 
-class GPT_Classic_Prompter(LLM_Base_Prompter):
+class GPT_Ocsai1_Prompter(LLM_Base_Prompter):
     """The format used in the original LLM paper, Organisciak et al. 2023"""
 
     max_tokens: int = 2
@@ -51,46 +46,7 @@ class GPT_Classic_Prompter(LLM_Base_Prompter):
 
         return f"{int(score*10)}"
 
-    def _extract_content(self, choice) -> str:
-        """Extract the content string from a response choice."""
-        if hasattr(choice, "text"):
-            content = choice.text
-        elif hasattr(choice, "logprobs") and choice.logprobs is not None:
-            content = "".join(choice.logprobs.tokens)
-        else:
-            self.logger.error(choice)
-            raise ValueError(
-                "Response object does not have a 'content' or 'logprobs' attribute."
-            )
-        return content
-
-    def _extract_usage(self, response, divide_by: int = 1) -> UsageStats:
-        """Extract usage statistics from a response."""
-        return {
-            "total": response.usage.total_tokens / divide_by,
-            "prompt": response.usage.prompt_tokens / divide_by,
-            "completion": response.usage.completion_tokens / divide_by,
-        }
-
-    def _extract_token_logprobs(self, choice) -> list[LogProbPair] | None:
-        """Extract the token log probabilities from a response choice
-        If there are multiple choices, return a list of lists."""
-        if not hasattr(choice, "logprobs") or choice.logprobs is None:
-            return None
-        tokens = choice.logprobs.tokens
-        toplogprobs = choice.logprobs.top_logprobs
-        if len(tokens) > 1:
-            if tokens[0].strip() == "":
-                tokens = tokens[1:]
-                toplogprobs = toplogprobs[1:]
-            if len(tokens) > 1:
-                self.logger.warn("Only one token expected, after stripping whitespace. Just using first token")
-        score_logprobs = list(toplogprobs[0].items())
-        return score_logprobs
-
-    def parse_content(
-        self, content: str, type: ResponseTypes = "other"
-    ) -> FullScore:
+    def parse_content(self, content: str, type: ResponseTypes = "other") -> FullScore:
         score = int(content) / 10
         return {"score": score, "confidence": None, "flags": None, "n": 1, "type": type}
 

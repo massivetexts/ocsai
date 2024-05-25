@@ -3,6 +3,7 @@ from ..train import GPT_Ocsai2_Prompter
 from tqdm.auto import tqdm
 # from tqdm.asyncio import tqdm_asyncio
 import asyncio
+from ..llm_interface import OpenAIChatInterface
 
 GPTCHATMODELS = {
     "ocsai_1.5_full": "ft:gpt-3.5-turbo-1106:peter-organisciak:ocsai-full-1-24:8d5RLryO",
@@ -13,6 +14,7 @@ GPTCHATMODELS = {
 class GPT_Chat_Scorer(GPT_Base_Scorer):
 
     DEFAULT_PROMPTER = GPT_Ocsai2_Prompter
+    chat_interface = OpenAIChatInterface()
 
     def __init__(self, *args, **kwargs):
         if "model_dict" not in kwargs or not kwargs["model_dict"]:
@@ -79,7 +81,7 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
         if runasync:
             raise NotImplementedError("This method is not yet complete.")
             all_responses = asyncio.run(
-                self._score_gpt_async(gptprompt, model, raw=True)
+                self._score_gpt_async(gptprompt, model_id, raw=True)
             )
 
             content = [
@@ -137,7 +139,7 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
 
         all_standardized = []
         for response in all_responses:
-            standard_response = self.prompter.standardize_response(response)
+            standard_response = self.chat_interface.standardize_response(response)
             assert len(standard_response) == 1, "Only one response expected for chat model"
             all_standardized += standard_response
         return all_standardized

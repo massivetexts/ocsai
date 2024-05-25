@@ -1,5 +1,6 @@
 from typing import Literal
-from ..train.llm_base_prompter import LLM_Base_Prompter, FullScore, StandardAIResponse
+from ..types import StandardAIResponse, FullScore
+from ..train.llm_base_prompter import LLM_Base_Prompter
 import openai
 from tqdm.auto import tqdm
 import time

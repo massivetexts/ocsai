@@ -1,11 +1,12 @@
-from .gpt_classic_prompter import GPT_Classic_Prompter
+from .gpt_ocsai1_prompter import GPT_Ocsai1_Prompter
 
 
-class GPT_Classic2_Prompter(GPT_Classic_Prompter):
+class GPT_Ocsai1_Multi_Prompter(GPT_Ocsai1_Prompter):
     ''' A slightly modified training format from the 'classic' format in
     Organisciak et al. 2023, used in Acar et al. 2023, adjusted to support
     multiple task types.
     '''
+    sys_msg_text = "You score originality in divergent thinking tasks."
     max_tokens: int = 2
 
     def craft_prompt(self, item: str, response: str,
