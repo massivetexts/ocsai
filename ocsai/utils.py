@@ -7,14 +7,13 @@ from ..types import LogProbPair, StandardAIResponse, UsageStats
 import openai
 
 
-
 def generic_llm(text,
                 sysmsg,
                 client: anthropic.Anthropic | openai.OpenAI,
                 model: str = 'gpt-3.5-turbo',
                 temperature: float = 0.0,
                 max_tokens: int = 300,
-                ) -> StandardAIResponse:
+                ) -> str:
     '''Run an openai or anthropic api call, based on the supplied client.'''
     common_args = {
         'model': model,
@@ -42,11 +41,7 @@ def generic_llm(text,
         content = response.choices[0].message.content
     else:
         raise ValueError("client must be either an anthropic.Anthropic or openai.OpenAI object.")
-    return {
-        "content": content,
-        "logprobs": list[LogProbPair] | None,
-        "usage": UsageStats | None,
-    }
+    return content
 
 def can_render_md_html():
     try:
