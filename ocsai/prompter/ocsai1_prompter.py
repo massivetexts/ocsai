@@ -1,8 +1,8 @@
-from .llm_base_prompter import LLM_Base_Prompter
+from .base_prompter import Base_Prompter
 from ..types import FullScore, LogProbPair, ResponseTypes, UsageStats
 
 
-class GPT_Ocsai1_Prompter(LLM_Base_Prompter):
+class Ocsai1_Prompter(Base_Prompter):
     """The format used in the original LLM paper, Organisciak et al. 2023"""
 
     max_tokens: int = 2

@@ -1,6 +1,6 @@
 from ..types import StandardAIResponse
-from ..train import GPT_Ocsai1_Prompter
-from .gpt_base_scorer import GPT_Base_Scorer
+from ..prompter import Ocsai1_Prompter
+from .base_scorer import Base_Scorer
 from ..llm_interface import OpenAILegacyInterface
 
 GPTCLASSICMODELS = {
@@ -9,9 +9,9 @@ GPTCLASSICMODELS = {
 }
 
 
-class GPT_Classic_Scorer(GPT_Base_Scorer):
+class Classic_Scorer(Base_Scorer):
 
-    DEFAULT_PROMPTER = GPT_Ocsai1_Prompter
+    DEFAULT_PROMPTER = Ocsai1_Prompter
     chat_interface = OpenAILegacyInterface()
 
     def __init__(self, *args, **kwargs):
@@ -21,7 +21,7 @@ class GPT_Classic_Scorer(GPT_Base_Scorer):
             kwargs["prompter"] = self.DEFAULT_PROMPTER()
         super().__init__(*args, **kwargs)
 
-    def _score_gpt(self, gptprompt: str | list[str],
+    def _score_llm(self, gptprompt: str | list[str],
                    model_id: str,
                    top_probs: int = 0) -> list[StandardAIResponse]:
         '''

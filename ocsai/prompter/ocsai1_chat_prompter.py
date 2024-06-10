@@ -1,7 +1,7 @@
-from .gpt_ocsai1_prompter import GPT_Ocsai1_Prompter
+from .ocsai1_prompter import Ocsai1_Prompter
 
 
-class Ocsai1_Chat_Prompter(GPT_Ocsai1_Prompter):
+class Ocsai1_Chat_Prompter(Ocsai1_Prompter):
     ''' The format used in the original LLM paper, adjusted slightly to work with chat.'''
     sys_msg_text = "You score originality in the alternate uses task."
     max_tokens = 2

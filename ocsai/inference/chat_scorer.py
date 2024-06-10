@@ -1,5 +1,5 @@
-from .gpt_base_scorer import GPT_Base_Scorer
-from ..train import GPT_Ocsai2_Prompter
+from .base_scorer import Base_Scorer
+from ..prompter import Ocsai2_Prompter
 from tqdm.auto import tqdm
 # from tqdm.asyncio import tqdm_asyncio
 import asyncio
@@ -11,9 +11,9 @@ GPTCHATMODELS = {
 }
 
 
-class GPT_Chat_Scorer(GPT_Base_Scorer):
+class Chat_Scorer(Base_Scorer):
 
-    DEFAULT_PROMPTER = GPT_Ocsai2_Prompter
+    DEFAULT_PROMPTER = Ocsai2_Prompter
     chat_interface = OpenAIChatInterface()
 
     def __init__(self, *args, **kwargs):
@@ -23,7 +23,7 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
             kwargs["prompter"] = self.DEFAULT_PROMPTER()
         super().__init__(*args, **kwargs)
 
-    async def _score_gpt_async(self, gptprompt, model="first", top_probs: int = 0, raw: bool = False):
+    async def _score_llm_async(self, gptprompt, model="first", top_probs: int = 0, raw: bool = False):
         if model == "first":
             model = self.models[0]
 
@@ -60,7 +60,7 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
             ]
             return content
 
-    def _score_gpt(
+    def _score_llm(
         self,
         gptprompt: str | list[str],
         model_id: str,
@@ -81,7 +81,7 @@ class GPT_Chat_Scorer(GPT_Base_Scorer):
         if runasync:
             raise NotImplementedError("This method is not yet complete.")
             all_responses = asyncio.run(
-                self._score_gpt_async(gptprompt, model_id, raw=True)
+                self._score_llm_async(gptprompt, model_id, raw=True)
             )
 
             content = [

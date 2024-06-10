@@ -1,6 +1,6 @@
 from typing import Literal
 from ..types import StandardAIResponse, FullScore
-from ..train.llm_base_prompter import LLM_Base_Prompter
+from ..prompter import Base_Prompter
 import openai
 from tqdm.auto import tqdm
 import time
@@ -12,9 +12,9 @@ from ..cache import Ocsai_Cache, Ocsai_Parquet_Cache
 # import asyncio
 
 
-class GPT_Base_Scorer:
+class Base_Scorer:
 
-    DEFAULT_PROMPTER = LLM_Base_Prompter
+    DEFAULT_PROMPTER = Base_Prompter
 
     def __init__(
         self,
@@ -125,9 +125,9 @@ class GPT_Base_Scorer:
             target, response, question=question, task_type=task_type, language=language
         )
 
-        # Note: _score_gpt is implemented in subclasses, and it takes the full
+        # Note: _score_llm is implemented in subclasses, and it takes the full
         # model name
-        standard_response = self._score_gpt(
+        standard_response = self._score_llm(
             prompt_str, model_id=model_id, top_probs=top_probs
         )
         assert len(standard_response) == 1  # expected only one here
@@ -171,14 +171,14 @@ class GPT_Base_Scorer:
         if standard_response["logprobs"] is not None:
             weighted_scores: list[FullScore] = []
             if progressive_weighted:
-                probs_to_parse = [standard_response["logprobs"][:i] 
+                probs_to_parse = [standard_response["logprobs"][:i]
                                   for i in range(2, len(standard_response["logprobs"]) + 1)]
             else:
                 probs_to_parse = [standard_response["logprobs"]]
-            
+
             for logprobs in probs_to_parse:
                 probability_scores = self.prompter.probability_scores(logprobs)
-                
+
                 weighted_score: FullScore = {
                     "score": probability_scores["weighted"],
                     "confidence": probability_scores["weighted_confidence"],
@@ -205,12 +205,12 @@ class GPT_Base_Scorer:
     def add_model(self, name, finetunepath):
         self.models[name] = finetunepath
 
-    def _score_gpt(
+    def _score_llm(
         self, gptprompt: str | list[str], model_id: str, top_probs: int = 0
     ) -> list[StandardAIResponse]:
         raise NotImplementedError
 
-    def _score_gpt_async(
+    def _score_llm_async(
         self, gptprompt, model: str = "first", top_probs: int = 0, raw: bool = False
     ):
         raise NotImplementedError
@@ -301,7 +301,7 @@ class GPT_Base_Scorer:
                         language=language,
                     )
                 )
-            standard_responses = self._score_gpt(
+            standard_responses = self._score_llm(
                 gptprompts, model_id=model_id, top_probs=top_probs
             )
             for i, standard_response in enumerate(standard_responses):

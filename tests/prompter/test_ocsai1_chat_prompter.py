@@ -1,8 +1,8 @@
-from ocsai.train import Ocsai1_Chat_Prompter
+from ocsai.prompter import Ocsai1_Chat_Prompter
 
 
 # Test Initialization
-def test_gpt_classic_chat_prompter_initialization():
+def test_classic_chat_prompter_initialization():
     prompter = Ocsai1_Chat_Prompter()
     assert prompter is not None
     assert prompter.sys_msg_text is not None

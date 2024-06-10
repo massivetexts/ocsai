@@ -1,5 +1,5 @@
-from ocsai.inference.gpt_chat_scorer import GPT_Chat_Scorer
-from ocsai.train import Ocsai1_Chat_Prompter, GPT_Ocsai2_Prompter
+from ocsai.inference.chat_scorer import Chat_Scorer
+from ocsai.prompter import Ocsai1_Chat_Prompter, Ocsai2_Prompter
 
 # Sample data for testing
 ocsai1_chat_models = {
@@ -11,8 +11,8 @@ ocsai15_chat_models = {
 
 
 # Test 1.0 Initialization
-def test_gpt_chat_scorer_initialization_classic():
-    chat_scorer = GPT_Chat_Scorer(
+def test_chat_scorer_initialization_classic():
+    chat_scorer = Chat_Scorer(
         cache=None, model_dict=ocsai1_chat_models, prompter=Ocsai1_Chat_Prompter()
     )
     assert chat_scorer is not None
@@ -20,17 +20,17 @@ def test_gpt_chat_scorer_initialization_classic():
 
 
 # Test 1.5 Initialization
-def test_gpt_chat_scorer_initialization_ocsai15():
-    chat_scorer = GPT_Chat_Scorer(
-        cache=None, model_dict=ocsai15_chat_models, prompter=GPT_Ocsai2_Prompter()
+def test_chat_scorer_initialization_ocsai15():
+    chat_scorer = Chat_Scorer(
+        cache=None, model_dict=ocsai15_chat_models, prompter=Ocsai2_Prompter()
     )
     assert chat_scorer is not None
-    assert isinstance(chat_scorer.prompter, GPT_Ocsai2_Prompter)
+    assert isinstance(chat_scorer.prompter, Ocsai2_Prompter)
 
 
 # Test score method
 def test_chat_scorer_score_method_classic():
-    chat_scorer = GPT_Chat_Scorer(
+    chat_scorer = Chat_Scorer(
         cache=None, model_dict=ocsai1_chat_models, prompter=Ocsai1_Chat_Prompter()
     )
     result = chat_scorer.score("Pants", "makeshift flag")
@@ -39,8 +39,8 @@ def test_chat_scorer_score_method_classic():
 
 # Test score method
 def test_chat_scorer_score_method_ocsai15():
-    chat_scorer = GPT_Chat_Scorer(
-        cache=None, model_dict=ocsai15_chat_models, prompter=GPT_Ocsai2_Prompter()
+    chat_scorer = Chat_Scorer(
+        cache=None, model_dict=ocsai15_chat_models, prompter=Ocsai2_Prompter()
     )
     result = chat_scorer.score("Pants", "makeshift flag")
     assert result == [{"score": 3.0, "confidence": 2, "flags": None, 'n': 1, 'type': 'top'}]
@@ -48,7 +48,7 @@ def test_chat_scorer_score_method_ocsai15():
 
 # Test originality method
 def test_chat_scorer_originality_method_classic():
-    chat_scorer = GPT_Chat_Scorer(
+    chat_scorer = Chat_Scorer(
         cache=None, model_dict=ocsai1_chat_models, prompter=Ocsai1_Chat_Prompter()
     )
     score = chat_scorer.originality("Pants", "makeshift flag")
@@ -57,8 +57,8 @@ def test_chat_scorer_originality_method_classic():
 
 # Test originality method
 def test_chat_scorer_originality_method_ocsai15():
-    chat_scorer = GPT_Chat_Scorer(
-        cache=None, model_dict=ocsai15_chat_models, prompter=GPT_Ocsai2_Prompter()
+    chat_scorer = Chat_Scorer(
+        cache=None, model_dict=ocsai15_chat_models, prompter=Ocsai2_Prompter()
     )
     score = chat_scorer.originality("Pants", "makeshift flag")
     assert score == 3.0
@@ -66,8 +66,8 @@ def test_chat_scorer_originality_method_ocsai15():
 
 # Test originality_batch with questions instead of prompts.
 def test_originality_batch_with_questions():
-    chat_scorer = GPT_Chat_Scorer(
-        cache=None, model_dict=ocsai15_chat_models, prompter=GPT_Ocsai2_Prompter()
+    chat_scorer = Chat_Scorer(
+        cache=None, model_dict=ocsai15_chat_models, prompter=Ocsai2_Prompter()
     )
     results = chat_scorer.originality_batch(
         prompts=None,
@@ -85,7 +85,7 @@ def test_originality_batch_with_questions():
 
 # Test originality_batch method
 def test_chat_scorer_originality_batch_method_classic():
-    chat_scorer = GPT_Chat_Scorer(
+    chat_scorer = Chat_Scorer(
         cache=None, model_dict=ocsai1_chat_models, prompter=Ocsai1_Chat_Prompter()
     )
     results = chat_scorer.originality_batch(
@@ -102,8 +102,8 @@ def test_chat_scorer_originality_batch_method_classic():
 
 # Test originality_batch method
 def test_chat_scorer_originality_batch_method_ocsai15():
-    chat_scorer = GPT_Chat_Scorer(
-        cache=None, model_dict=ocsai15_chat_models, prompter=GPT_Ocsai2_Prompter()
+    chat_scorer = Chat_Scorer(
+        cache=None, model_dict=ocsai15_chat_models, prompter=Ocsai2_Prompter()
     )
     results = chat_scorer.originality_batch(
         ["Pants", "Pants"],
@@ -121,8 +121,8 @@ def test_chat_scorer_originality_batch_method_ocsai15():
 def test_originality_df_ocsai15():
     import pandas as pd
 
-    chat_scorer = GPT_Chat_Scorer(
-        cache=None, model_dict=ocsai15_chat_models, prompter=GPT_Ocsai2_Prompter()
+    chat_scorer = Chat_Scorer(
+        cache=None, model_dict=ocsai15_chat_models, prompter=Ocsai2_Prompter()
     )
     df = pd.DataFrame(
         [["Pants", "makeshift flag"], ["Pants", "make a parachute"]],
@@ -145,7 +145,7 @@ def test_originality_df_ocsai15():
 
 # Test crafting prompt
 def test_chat_scorer_craft_prompt_classic():
-    chat_scorer = GPT_Chat_Scorer(
+    chat_scorer = Chat_Scorer(
         cache=None, model_dict=ocsai1_chat_models, prompter=Ocsai1_Chat_Prompter()
     )
     prompt = chat_scorer.prompter.craft_prompt("Pants", "makeshift flag")

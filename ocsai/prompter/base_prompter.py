@@ -1,10 +1,9 @@
 import logging
-from ..types import LogProbPair, ParsedProbPair, ProbPair, ProbScores, ResponseTypes, StandardAIResponse, FullScore, UsageStats
+from ..types import LogProbPair, ParsedProbPair, ProbPair, ProbScores, ResponseTypes, FullScore
 import numpy as np
-from typing import TypedDict, Literal
 
 
-class LLM_Base_Prompter:
+class Base_Prompter:
     sys_msg_text: str | None = None
     max_tokens: int = 100
     stop_char: str | None = None

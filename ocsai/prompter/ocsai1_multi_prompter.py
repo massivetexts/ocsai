@@ -1,7 +1,7 @@
-from .gpt_ocsai1_prompter import GPT_Ocsai1_Prompter
+from .ocsai1_prompter import Ocsai1_Prompter
 
 
-class GPT_Ocsai1_Multi_Prompter(GPT_Ocsai1_Prompter):
+class Ocsai1_Multi_Prompter(Ocsai1_Prompter):
     ''' A slightly modified training format from the 'classic' format in
     Organisciak et al. 2023, used in Acar et al. 2023, adjusted to support
     multiple task types.

@@ -1,3 +1,4 @@
-from .gpt_base_scorer import GPT_Base_Scorer
-from .gpt_chat_scorer import GPT_Chat_Scorer
-from .gpt_classic_scorer import GPT_Classic_Scorer
+# flake8: noqa
+from .base_scorer import Base_Scorer
+from .chat_scorer import Chat_Scorer
+from .classic_scorer import Classic_Scorer

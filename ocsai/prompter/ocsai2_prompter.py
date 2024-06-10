@@ -1,10 +1,11 @@
-from .llm_base_prompter import LLM_Base_Prompter
-from ..types import LogProbPair, FullScore, ResponseTypes, UsageStats
+from .base_prompter import Base_Prompter
+from ..types import LogProbPair, FullScore, ResponseTypes
 import random
 import numpy as np
 import re
 
-class GPT_Ocsai2_Prompter(LLM_Base_Prompter):
+
+class Ocsai2_Prompter(Base_Prompter):
     """The new format, introduced with Ocsai 1.5."""
 
     sys_msg_text = "You are a creativity judge, scoring tests of originality."
