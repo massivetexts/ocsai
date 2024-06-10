@@ -33,7 +33,7 @@ class Ocsai2_Prompter(Base_Prompter):
         prompt_exclude_prob: float = 0,
         language_exclude_prob: float = 0,
         question_exclude_prob: float = 0,
-        detail_exclude_prob: float = 0,
+        detail_exclude_prob: float = 1,
         no_flags: bool = False,
     ) -> str:
         # Initialize the random number generator with the provided seed
