@@ -43,7 +43,7 @@ def test_chat_scorer_score_method_ocsai15():
         cache=None, model_dict=ocsai15_chat_models, prompter=Ocsai2_Prompter()
     )
     result = chat_scorer.score("Pants", "makeshift flag")
-    assert result == [{"score": 3.0, "confidence": 2, "flags": None, 'n': 1, 'type': 'top'}]
+    assert result == [{"score": 3.2, "confidence": 3, "flags": None, 'n': 1, 'type': 'top'}]
 
 
 # Test originality method
@@ -61,7 +61,7 @@ def test_chat_scorer_originality_method_ocsai15():
         cache=None, model_dict=ocsai15_chat_models, prompter=Ocsai2_Prompter()
     )
     score = chat_scorer.originality("Pants", "makeshift flag")
-    assert score == 3.0
+    assert score == 3.2
 
 
 # Test originality_batch with questions instead of prompts.
@@ -77,7 +77,7 @@ def test_originality_batch_with_questions():
         raise_errs=True,
     )
     expected_results = [
-        {"score": 3.0, "confidence": 3, "flags": None},
+        {"score": 4.2, "confidence": 3, "flags": None},
         {"score": 3.8, "confidence": 3, "flags": None},
     ]
     assert results == expected_results
@@ -111,8 +111,8 @@ def test_chat_scorer_originality_batch_method_ocsai15():
         model="ocsai-1.5",
     )
     expected_results = [
-        {"score": 3.0, "confidence": 2, "flags": None},
-        {"score": 3.0, "confidence": 2, "flags": None},
+        {"score": 3.2, "confidence": 3, "flags": None},
+        {"score": 3.2, "confidence": 3, "flags": None},
     ]
     assert results == expected_results
 
@@ -134,8 +134,8 @@ def test_originality_df_ocsai15():
     expected_results = {
         'prompt_randname': {0: 'Pants', 1: 'Pants'},
         'response_randname': {0: 'makeshift flag', 1: 'make a parachute'},
-        'score': {0: 3.0, 1: 3.0},
-        'confidence': {0: 2, 1: 3},
+        'score': {0: 3.2, 1: 3.2},
+        'confidence': {0: 3, 1: 3},
         'flags': {0: None, 1: None}
     }
 

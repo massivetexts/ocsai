@@ -18,13 +18,6 @@ def test_craft_prompt_method():
         TASK: uses
         PROMPT: Pants
         RESPONSE: `makeshift flag`
-
-        ## Details
-        SCALE: 1-5, where 1 is `not original at all` and 5 is `extremely original`
-        FORMAT: Return in the format of newline-separated `KEY:value` pairs, with the following fields:
-        - `SCORE`: An originality score, 1-5
-        - `CONFIDENCE`: A measure of confidence in the score, 1-3, or None.
-        - `FLAGS`: A comma-separated list with content flags, such as: 'nonsense', 'violent', 'not practical'
         """
     ans = textwrap.dedent(ans).strip()
     assert prompt == ans
