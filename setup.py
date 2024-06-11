@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="Ocsai",
-    version="0.3",
+    version="0.4",
     packages=find_packages(),
     install_requires=[
         "pingouin",
@@ -12,8 +12,14 @@ setup(
         "duckdb",
         "tqdm",
         "numpy",
-        "psycopg2",
     ],
+    extras_require={
+        'dev': [
+            'pytest',
+            'pytest-docker-tools',
+            'redis',
+        ],
+    },
     # metadata to display on PyPI
     author="Peter Organisciak",
     author_email="peter.organisciak@du.edu",

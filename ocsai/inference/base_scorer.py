@@ -8,7 +8,7 @@ import logging
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from ..cache import Ocsai_Cache, Ocsai_Parquet_Cache
+from ..cache import Ocsai_Cache, Ocsai_Parquet_Cache, Ocsai_Redis_Cache
 # import asyncio
 
 
@@ -20,7 +20,7 @@ class Base_Scorer:
         self,
         openai_key_path: str | None = None,
         model_dict: dict = {},
-        cache: str | Ocsai_Parquet_Cache | Path | None = None,
+        cache: str | Ocsai_Parquet_Cache | Ocsai_Redis_Cache | Path | None = None,
         logger=None,
         prompter=None,
     ):
