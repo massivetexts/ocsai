@@ -1,9 +1,12 @@
+from typing import Awaitable
+from ocsai.types import StandardAIResponse
 from .base_scorer import Base_Scorer
 from ..prompter import Ocsai2_Prompter
 from tqdm.auto import tqdm
 # from tqdm.asyncio import tqdm_asyncio
 import asyncio
 from ..llm_interface import OpenAIChatInterface
+import openai
 
 GPTCHATMODELS = {
     "ocsai_1.5_full": "ft:gpt-3.5-turbo-1106:peter-organisciak:ocsai-full-1-24:8d5RLryO",
@@ -14,7 +17,7 @@ GPTCHATMODELS = {
 class Chat_Scorer(Base_Scorer):
 
     DEFAULT_PROMPTER = Ocsai2_Prompter
-    chat_interface = OpenAIChatInterface()
+    llm_interface = OpenAIChatInterface()
 
     def __init__(self, *args, **kwargs):
         if "model_dict" not in kwargs or not kwargs["model_dict"]:
@@ -23,50 +26,54 @@ class Chat_Scorer(Base_Scorer):
             kwargs["prompter"] = self.DEFAULT_PROMPTER()
         super().__init__(*args, **kwargs)
 
-    async def _score_llm_async(self, gptprompt, model="first", top_probs: int = 0, raw: bool = False):
-        if model == "first":
-            model = self.models[0]
+        self.async_client = openai.AsyncOpenAI(api_key=openai.api_key)
+        max_async_processes = 10
+        self.async_semaphore = asyncio.Semaphore(max_async_processes)
 
-        if type(gptprompt) is str:
-            gptprompt = [gptprompt]
-        if len(gptprompt) > 20:
-            raise ValueError(
-                "This method is not designed for large batches. Use the classic API."
-            )
+    async def _score_llm_async(
+        self,
+        gptprompt: str | list[str],
+        model_id: str,
+        top_probs: int = 0,
+    ) -> list[list[StandardAIResponse]]:
+        gptprompt = [gptprompt] if isinstance(gptprompt, str) else gptprompt
+        logprobs = self._verify_logprobs(top_probs)
 
-        SYS_MSG = {"role": "system", "content": self.prompter.sys_msg_text}
-
-        async def process_prompt(prompt):
-            async with self.async_semaphore:
-                messages = [SYS_MSG, {"role": "user", "content": prompt}]
-                response = await self.async_client.chat.completions.create(
-                    model=self._models[model],
-                    messages=messages,
-                    temperature=0,
-                    n=1,
-                    logprobs=None,
-                    max_tokens=self.prompter.max_tokens,
+        async with self.async_semaphore:
+            tasks = []
+            for prompt in gptprompt:
+                tasks.append(
+                    self.llm_interface.completion_async(
+                        async_client=self.async_client,
+                        model=model_id,
+                        prompt=prompt,
+                        temperature=0,
+                        logprobs=logprobs,
+                        stop_char=self.prompter.stop_char,  # STOP on newline only if aiming for score only
+                        max_tokens=self.prompter.max_tokens,
+                    )
                 )
-                return response
+            all_responses = await asyncio.gather(*tasks)
 
-        all_responses = [process_prompt(prompt) for prompt in gptprompt]
-        final_responses = await asyncio.gather(*all_responses)
-        if raw:
-            return final_responses
-        else:
-            content = [
-                response.choices[0].message.content
-                for response in await final_responses
-            ]
-            return content
+        return all_responses
+
+    def _verify_logprobs(self, top_probs: int):
+        if top_probs > 0:
+            max_probs = 20
+            if top_probs > max_probs:
+                self.logger.warning(
+                    f"OpenAI API only supports {max_probs} logprobs at a time. Forcing top_probs={max_probs}."
+                )
+                top_probs = max_probs
+            return top_probs
+        return None
 
     def _score_llm(
         self,
         gptprompt: str | list[str],
         model_id: str,
-        top_probs: int = 0,
-        runasync=False,
-    ):
+        top_probs: int = 0
+    ) -> list[list[StandardAIResponse]]:
         """
         gptprompt is the templated item+response+type+language. Use _craft_gptprompt.
 
@@ -78,68 +85,25 @@ class Chat_Scorer(Base_Scorer):
         - A list of strings if raw=False and top_probs=0
         - A list of (string, ProbScores) tuples if raw=False and top_probs>0
         """
-        if runasync:
-            raise NotImplementedError("This method is not yet complete.")
-            all_responses = asyncio.run(
-                self._score_llm_async(gptprompt, model_id, raw=True)
-            )
-
-            content = [
-                response.choices[0].message.content for response in all_responses
-            ]
-            return content
+        gptprompt = [gptprompt] if isinstance(gptprompt, str) else gptprompt
+        logprobs: int | None = self._verify_logprobs(top_probs)
 
         all_responses = []
-        if type(gptprompt) is str:
-            gptprompt = [gptprompt]
-
-        logprobs: int | None = None
-        if top_probs > 0:
-            max_probs = 20
-            if top_probs > max_probs:
-                self.logger.warning(
-                    f"OpenAI API only supports {max_probs} logprobs at a time. Forcing top_probs={max_probs}."
-                )
-                top_probs = max_probs
-            logprobs = top_probs
-
-        SYS_MSG = {"role": "system", "content": self.prompter.sys_msg_text}
-
-        # if len(gptprompt) is less than 10, turn off tqdm
-        if len(gptprompt) > 10:
-            wrapped_gptprompt = tqdm(gptprompt)
-        else:
-            wrapped_gptprompt = gptprompt
-
-        for prompt in wrapped_gptprompt:
-            # May need to eventually switch
-            # to multi-threading - a headache in Python - or TypeScript'
+        for prompt in (tqdm(gptprompt) if len(gptprompt) > 10 else gptprompt):
             self.logger.debug(
                 "Chat completions don't support batching, btw - so this is"
                 "considerably slower than the classic API."
             )
-
-            messages = [SYS_MSG, {"role": "user", "content": prompt}]
-
-            response = self.client.chat.completions.create(
+            response = self.llm_interface.completion(
+                client=self.client,
                 model=model_id,
-                messages=messages,
+                prompt=prompt,
                 temperature=0,
-                n=1,
-                logprobs=bool(logprobs),
-                top_logprobs=logprobs,
-                # Expected token counts:
-                # Just score is 6 tokens;
-                # score+confidence is 13 tokens;
-                # score+confidence+flags is still unknown
-                stop=self.prompter.stop_char,  # STOP on newline only if aiming for score only
+                sys_msg_text=self.prompter.sys_msg_text,
+                logprobs=logprobs,
+                stop_char=self.prompter.stop_char,  # STOP on newline only if aiming for score only
                 max_tokens=self.prompter.max_tokens,
             )
             all_responses.append(response)
 
-        all_standardized = []
-        for response in all_responses:
-            standard_response = self.chat_interface.standardize_response(response)
-            assert len(standard_response) == 1, "Only one response expected for chat model"
-            all_standardized += standard_response
-        return all_standardized
+        return all_responses

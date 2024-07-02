@@ -1,4 +1,5 @@
-from typing import Literal
+import asyncio
+from typing import Awaitable, Literal
 from ..types import StandardAIResponse, FullScore
 from ..prompter import Base_Prompter
 import openai
@@ -32,9 +33,7 @@ class Base_Scorer:
 
         self._models = model_dict
         self.client = openai.OpenAI(api_key=openai.api_key)
-        # self.async_client = openai.AsyncOpenAI(api_key=openai.api_key)
-        # max_async_processes = 10
-        # self.async_semaphore = asyncio.Semaphore(max_async_processes)
+        self.async_client = None
 
         self.cache = None
         if cache:
@@ -125,11 +124,44 @@ class Base_Scorer:
             target, response, question=question, task_type=task_type, language=language
         )
 
-        # Note: _score_llm is implemented in subclasses, and it takes the full
-        # model name
-        standard_response = self._score_llm(
+        standard_response_all_choices: list[list[StandardAIResponse]] = self._score_llm(
             prompt_str, model_id=model_id, top_probs=top_probs
         )
+        # remove list wrapping - expects only one choice
+        standard_response = [y[0] for y in standard_response_all_choices]
+        assert len(standard_response) == 1
+        return self._parse_standard_response(
+            standard_response[0],
+            confidence_priority=confidence_priority,
+            raise_errs=raise_errs,
+            progressive_weighted=progressive_weighted
+        )
+
+    async def score_async(
+        self,
+        target: str | None,
+        response: str,
+        question: str | None = None,
+        task_type: str | None = "uses",
+        language: str | None = "eng",
+        model: str = "first",
+        top_probs: int = 0,
+        raise_errs: bool = False,
+        confidence_priority: Literal["content", "probabilities"] = "probabilities",
+        progressive_weighted: bool = False,
+        async_if_available: bool = True,
+        **kwargs,
+    ) -> list[FullScore]:
+        model_id = self._select_model_id(model)
+
+        prompt_str = self.prompter.craft_prompt(
+            target, response, question=question, task_type=task_type, language=language
+        )
+
+        standard_response_all_choices = await self._score_llm_async(
+            prompt_str, model_id=model_id, top_probs=top_probs
+        )
+        standard_response = [y[0] for y in standard_response_all_choices]
         assert len(standard_response) == 1  # expected only one here
         return self._parse_standard_response(
             standard_response[0],
@@ -207,14 +239,29 @@ class Base_Scorer:
 
     def _score_llm(
         self, gptprompt: str | list[str], model_id: str, top_probs: int = 0
-    ) -> list[StandardAIResponse]:
+    ) -> list[list[StandardAIResponse]]:
         raise NotImplementedError
 
-    def _score_llm_async(
-        self, gptprompt, model: str = "first", top_probs: int = 0, raw: bool = False
-    ):
+    async def _score_llm_async(
+        self, gptprompt, model_id: str = "first", top_probs: int = 0, raw: bool = False
+    ) -> list[list[StandardAIResponse]]:
         raise NotImplementedError
 
+    def _check_if_running_loop(self):
+        # if there is a running loop (e.g. in a jupyter notebook), raise an error
+        # weird function - looping for the error
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+        if loop and loop.is_running():
+            self.logger.warn('''Event loop is already running. Usually this means that you're running code in Jupyter,
+                             which has runs async. The problem is that async functions cannot be run within synchronous
+                             functions when there's already a loop running. If you're developing code to run as a script,
+                             this should be fine to ignore - async won't work now, but will in the script.''')
+            return True
+        return False
+        
     def originality_batch(
         self,
         prompts: list[str | None] | str | None,
@@ -230,6 +277,7 @@ class Base_Scorer:
         confidence_priority: Literal["content", "probabilities"] = "probabilities",
         debug: bool = False,
         min_size_to_write_cache: int = 100,
+        use_async: bool = True,
         **kwargs,
     ):
         """Get originality in a batch, with optional caching.
@@ -301,9 +349,21 @@ class Base_Scorer:
                         language=language,
                     )
                 )
-            standard_responses = self._score_llm(
-                gptprompts, model_id=model_id, top_probs=top_probs
-            )
+            if use_async:
+                if self._check_if_running_loop():
+                    use_async = False
+
+            if use_async:
+                standard_responses = asyncio.run(
+                    self._score_llm_async(
+                        gptprompts, model_id=model_id, top_probs=top_probs
+                    )
+                )
+            else:
+                standard_responses = self._score_llm(
+                    gptprompts, model_id=model_id, top_probs=top_probs
+                )
+                
             for i, standard_response in enumerate(standard_responses):
                 try:
                     fullscores = self._parse_standard_response(
@@ -385,6 +445,7 @@ class Base_Scorer:
         flags_name: str = "flags",
         min_size_to_write_cache: int = 100,
         force_overwrite: bool = False,
+        use_async: bool = True,
     ):
         """Run originality scoring on a dataframe, and append the results to a new dataframe"""
 
@@ -411,6 +472,7 @@ class Base_Scorer:
             raise_errs=raise_errs,
             batch_size=batch_size,
             min_size_to_write_cache=min_size_to_write_cache,
+            use_async=use_async
         )
         scores_df = pd.DataFrame(scores)
         outdf = dataframe.copy()

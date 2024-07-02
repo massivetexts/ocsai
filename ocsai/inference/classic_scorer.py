@@ -12,7 +12,7 @@ GPTCLASSICMODELS = {
 class Classic_Scorer(Base_Scorer):
 
     DEFAULT_PROMPTER = Ocsai1_Prompter
-    chat_interface = OpenAILegacyInterface()
+    llm_interface = OpenAILegacyInterface()
 
     def __init__(self, *args, **kwargs):
         if "model_dict" not in kwargs or not kwargs["model_dict"]:
@@ -55,4 +55,4 @@ class Classic_Scorer(Base_Scorer):
             max_tokens=self.prompter.max_tokens,
         )
 
-        return self.chat_interface.standardize_response(response)
+        return self.llm_interface.standardize_response(response)
