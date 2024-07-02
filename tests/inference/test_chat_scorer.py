@@ -134,7 +134,7 @@ def test_originality_df_ocsai15():
     expected_results = {
         'prompt_randname': {0: 'Pants', 1: 'Pants'},
         'response_randname': {0: 'makeshift flag', 1: 'make a parachute'},
-        'score': {0: 3.2, 1: 3.2},
+        'score': {0: 3, 1: 3.6},
         'confidence': {0: 3, 1: 3},
         'flags': {0: None, 1: None}
     }

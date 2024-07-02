@@ -1,4 +1,5 @@
-from ..types import LogProbPair, UsageStats
+import openai
+from ..types import LogProbPair, StandardAIResponse, UsageStats
 from .llm_base_interface import LLM_Base_Interface
 
 
@@ -47,3 +48,69 @@ class OpenAILegacyInterface(LLM_Base_Interface):
                 )
         score_logprobs = list(toplogprobs[0].items())
         return score_logprobs
+
+    def _check_prompt(self,
+                      prompt: str | None,
+                      messages: list[dict] | None) -> str:
+        if (messages and prompt):
+            raise ValueError("Only one of prompt or messages should be provided. Usually prompt.")
+
+        if messages:
+            return [m for m in messages if m["role"] == "user"][0]['content']
+        else:
+            if not prompt:
+                raise ValueError("Prompt is required.")
+            return prompt
+
+    async def completion_async(
+        self,
+        async_client: openai.AsyncOpenAI,
+        model: str,
+        prompt: str | None = None,
+        messages: list[dict] | None = None,
+        sys_msg_text: str | None = None,
+        temperature: float = 0,
+        logprobs: int | None = None,
+        stop_char: str | None = None,
+        max_tokens: int | None = None,
+    ) -> list[StandardAIResponse]:
+        '''Completion for async client. Returns a list of StandardAIResponses - one for each choice (usually just one).'''
+
+        final_prompt = self._check_prompt(prompt, messages)
+
+        response = await async_client.completions.create(
+            model=model,
+            prompt=final_prompt,
+            temperature=temperature,
+            n=1,
+            logprobs=logprobs,
+            stop=stop_char,
+            max_tokens=max_tokens,
+        )
+        return self.standardize_response(response)
+
+    def completion(
+        self,
+        client: openai.OpenAI,
+        model: str,
+        prompt: str | None = None,
+        messages: list[dict] | None = None,
+        sys_msg_text: None = None,
+        temperature: float = 0,
+        logprobs: int | None = None,
+        stop_char: str | None = None,
+        max_tokens: int | None = None,
+    ) -> list[StandardAIResponse]:
+        final_prompt = self._check_prompt(prompt, messages)
+
+        response = client.completions.create(
+            model=model,
+            prompt=final_prompt,
+            temperature=temperature,
+            n=1,
+            logprobs=logprobs,
+            stop=stop_char,
+            max_tokens=max_tokens,
+        )
+
+        return self.standardize_response(response)

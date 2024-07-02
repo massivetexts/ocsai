@@ -1,5 +1,5 @@
 import asyncio
-from typing import Awaitable, Literal
+from typing import Literal
 from ..types import StandardAIResponse, FullScore
 from ..prompter import Base_Prompter
 import openai
@@ -10,12 +10,17 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from ..cache import Ocsai_Cache, Ocsai_Parquet_Cache, Ocsai_Redis_Cache
+from ..llm_interface import LLM_Base_Interface
 # import asyncio
 
 
 class Base_Scorer:
 
     DEFAULT_PROMPTER = Base_Prompter
+    DEFAULT_INTERFACE = LLM_Base_Interface
+    max_logprobs = 0
+    max_async_processes = 1
+    async_client = None
 
     def __init__(
         self,
@@ -24,6 +29,7 @@ class Base_Scorer:
         cache: str | Ocsai_Parquet_Cache | Ocsai_Redis_Cache | Path | None = None,
         logger=None,
         prompter=None,
+        llm_interface=None,
     ):
         if not logger:
             self.logger = logging.getLogger(__name__)
@@ -32,8 +38,9 @@ class Base_Scorer:
             self.logger = logger
 
         self._models = model_dict
-        self.client = openai.OpenAI(api_key=openai.api_key)
+        self.async_semaphore = asyncio.Semaphore(self.max_async_processes)
         self.async_client = None
+        self.client = openai.OpenAI(api_key=openai.api_key)
 
         self.cache = None
         if cache:
@@ -45,6 +52,7 @@ class Base_Scorer:
 
         # ensure that subclasses set the prompter
         self.prompter = prompter if prompter else self.DEFAULT_PROMPTER()
+        self.llm_interface = llm_interface if llm_interface else self.DEFAULT_INTERFACE()
 
     def originality(
         self,
@@ -237,15 +245,14 @@ class Base_Scorer:
     def add_model(self, name, finetunepath):
         self.models[name] = finetunepath
 
-    def _score_llm(
-        self, gptprompt: str | list[str], model_id: str, top_probs: int = 0
-    ) -> list[list[StandardAIResponse]]:
-        raise NotImplementedError
-
-    async def _score_llm_async(
-        self, gptprompt, model_id: str = "first", top_probs: int = 0, raw: bool = False
-    ) -> list[list[StandardAIResponse]]:
-        raise NotImplementedError
+    def _verify_logprobs(self, top_probs: int):
+        if top_probs > 0:
+            if top_probs > self.max_logprobs:
+                self.logger.warning(
+                    f"This API only supports {self.max_logprobs} logprobs at a time. Forcing top_probs={max_probs}."
+                )
+                top_probs = self.max_logprobs
+        return top_probs if top_probs > 0 else None
 
     def _check_if_running_loop(self):
         # if there is a running loop (e.g. in a jupyter notebook), raise an error
@@ -261,7 +268,77 @@ class Base_Scorer:
                              this should be fine to ignore - async won't work now, but will in the script.''')
             return True
         return False
-        
+
+    async def _score_llm_async(
+        self,
+        gptprompt: str | list[str],
+        model_id: str,
+        top_probs: int = 0,
+    ) -> list[list[StandardAIResponse]]:
+        gptprompt = [gptprompt] if isinstance(gptprompt, str) else gptprompt
+        logprobs = self._verify_logprobs(top_probs)
+
+        assert self.async_client is not None
+        assert self.async_semaphore is not None
+
+        async with self.async_semaphore:
+            tasks = []
+            for prompt in gptprompt:
+                tasks.append(
+                    self.llm_interface.completion_async(
+                        async_client=self.async_client,
+                        model=model_id,
+                        prompt=prompt,
+                        temperature=0,
+                        logprobs=logprobs,
+                        stop_char=self.prompter.stop_char,  # STOP on newline only if aiming for score only
+                        max_tokens=self.prompter.max_tokens,
+                    )
+                )
+            all_responses = await asyncio.gather(*tasks)
+
+        return all_responses
+
+    def _score_llm(
+        self,
+        gptprompt: str | list[str],
+        model_id: str,
+        top_probs: int = 0
+    ) -> list[list[StandardAIResponse]]:
+        """
+        gptprompt is the templated item+response+type+language. Use _craft_gptprompt.
+
+        If a string is provided, returns a single response. If a list is provided,
+        returns a list of responses in the same order.
+
+        Returns:
+        - An OpenAI completion object if raw=True
+        - A list of strings if raw=False and top_probs=0
+        - A list of (string, ProbScores) tuples if raw=False and top_probs>0
+        """
+        gptprompt = [gptprompt] if isinstance(gptprompt, str) else gptprompt
+        logprobs: int | None = self._verify_logprobs(top_probs)
+
+        all_responses = []
+        for prompt in (tqdm(gptprompt) if len(gptprompt) > 10 else gptprompt):
+            self.logger.debug(
+                "Chat completions don't support batching, btw - so this is"
+                "considerably slower than the classic API."
+            )
+            response = self.llm_interface.completion(
+                client=self.client,
+                model=model_id,
+                prompt=prompt,
+                temperature=0,
+                sys_msg_text=self.prompter.sys_msg_text,
+                logprobs=logprobs,
+                stop_char=self.prompter.stop_char,  # STOP on newline only if aiming for score only
+                max_tokens=self.prompter.max_tokens,
+            )
+            all_responses.append(response)
+
+        return all_responses
+
     def originality_batch(
         self,
         prompts: list[str | None] | str | None,
@@ -277,7 +354,7 @@ class Base_Scorer:
         confidence_priority: Literal["content", "probabilities"] = "probabilities",
         debug: bool = False,
         min_size_to_write_cache: int = 100,
-        use_async: bool = True,
+        use_async: bool = False,
         **kwargs,
     ):
         """Get originality in a batch, with optional caching.
@@ -364,7 +441,11 @@ class Base_Scorer:
                     gptprompts, model_id=model_id, top_probs=top_probs
                 )
                 
-            for i, standard_response in enumerate(standard_responses):
+            for i, standard_response_all_choices in enumerate(standard_responses):
+                if len(standard_response_all_choices) > 1:
+                    raise Exception("Batching not supported for multiple completion choices")
+
+                standard_response = standard_response_all_choices[0]
                 try:
                     fullscores = self._parse_standard_response(
                         standard_response,
