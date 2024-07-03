@@ -32,6 +32,7 @@ class OpenAIChatInterface(LLM_Base_Interface):
         elif choice.logprobs is None:
             return None
         score_logprobs = [
+            # TODO fix this - it is broken for >1 token. See un-refactored code in Ocsai2_Prompter._extract_token_logprobs
             (x.token, x.logprob) for x in choice.logprobs.content[0].top_logprobs
         ]
         return score_logprobs

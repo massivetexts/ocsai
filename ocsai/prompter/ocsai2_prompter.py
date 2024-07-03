@@ -9,6 +9,7 @@ class Ocsai2_Prompter(Base_Prompter):
     """The new format, introduced with Ocsai 1.5."""
 
     sys_msg_text = "You are a creativity judge, scoring tests of originality."
+    stop_char = 'FLAGS'
 
     train_probs = dict(
         action_exclude_prob=0.75,
@@ -17,7 +18,7 @@ class Ocsai2_Prompter(Base_Prompter):
         language_exclude_prob=0.5,
         question_exclude_prob=0.5,
         detail_exclude_prob=0.8,
-        no_flags=True,
+        no_flags=True
     )
 
     def craft_prompt(
@@ -98,13 +99,13 @@ class Ocsai2_Prompter(Base_Prompter):
 
         return prompt_text.strip()
 
-    def craft_response(self, score, confidence=None, flags=None):
+    def craft_response(self, score: float | None, confidence=None, flags=None):
         # cast score type: it an be a float or None (written as 'null' in the dataset)
         if score is None:
-            score = "null"
+            scorestr: str = "null"
         else:
-            score = str(score)
-        response = f"SCORE: {score}\n"
+            scorestr = str(int(score * 10))
+        response = f"SCORE: {scorestr}\n"
 
         if confidence and not np.isnan(confidence):
             response += f"CONFIDENCE: {confidence}\n"
@@ -131,7 +132,7 @@ class Ocsai2_Prompter(Base_Prompter):
         if score_str == "null":
             score = None
         else:
-            score = float(score_str)
+            score = float(score_str) / 10
 
         if "CONFIDENCE: " in content:
             try:
@@ -217,10 +218,17 @@ class Ocsai2_Prompter(Base_Prompter):
         if choice.logprobs is None:
             return None
 
-        # the content here is trickier to parse. It will be 'SCORE: x.y\n...'
-        # - the first three tokens, can be skipped - for the digit before and
-        # after the colon.
+        # the content here is trickier to parse. It will be 'SCORE: x\nCONFIDENCE...'
+        # - the first three tokens, can be skipped.
+        # here's how tiktoken encoded it:
+        # 'SCORE', ':', ' ', '30', '\n', 'CONF', 'ID', 'ENCE'
         whole_numbers: list[LogProbPair] = [(x.token, x.logprob) for x in choice.logprobs.content[3].top_logprobs]
+    
+        return whole_numbers
+
+        # TODO refactor into the openai_chat_interface, or under the other code that was moved there
+        # this is an artefact of when I used decimal numbers rather than whole numbers
+        # it is now wrong - but keeping here until it is refactors into the interface.
         tenths: list[LogProbPair] = [(x.token, x.logprob) for x in choice.logprobs.content[5].top_logprobs]
 
         # calculate joint log probs
