@@ -30,6 +30,7 @@ class Base_Scorer:
         logger=None,
         prompter=None,
         llm_interface=None,
+        max_async_processes: int | None = None,
     ):
         if not logger:
             self.logger = logging.getLogger(__name__)
@@ -38,7 +39,9 @@ class Base_Scorer:
             self.logger = logger
 
         self._models = model_dict
-        self.async_semaphore = asyncio.Semaphore(self.max_async_processes)
+        if not max_async_processes:
+            max_async_processes = self.max_async_processes
+        self.async_semaphore = asyncio.Semaphore(max_async_processes)
         self.async_client = None
         self.client = openai.OpenAI(api_key=openai.api_key)
 
@@ -96,7 +99,7 @@ class Base_Scorer:
 
     def score(
         self,
-        target: str | None,
+        target: str,
         response: str,
         question: str | None = None,
         task_type: str | None = "uses",
@@ -106,6 +109,7 @@ class Base_Scorer:
         raise_errs: bool = False,
         confidence_priority: Literal["content", "probabilities"] = "probabilities",
         progressive_weighted: bool = False,
+        prompt_kwargs: dict = {},
         **kwargs,
     ) -> list[FullScore]:
         """
@@ -129,7 +133,7 @@ class Base_Scorer:
         model_id = self._select_model_id(model)
 
         prompt_str = self.prompter.craft_prompt(
-            target, response, question=question, task_type=task_type, language=language
+            target, response, question=question, task_type=task_type, language=language, **prompt_kwargs
         )
 
         standard_response_all_choices: list[list[StandardAIResponse]] = self._score_llm(
@@ -147,7 +151,7 @@ class Base_Scorer:
 
     async def score_async(
         self,
-        target: str | None,
+        target: str,
         response: str,
         question: str | None = None,
         task_type: str | None = "uses",
@@ -157,13 +161,14 @@ class Base_Scorer:
         raise_errs: bool = False,
         confidence_priority: Literal["content", "probabilities"] = "probabilities",
         progressive_weighted: bool = False,
+        prompt_kwargs: dict = {},
         async_if_available: bool = True,
         **kwargs,
     ) -> list[FullScore]:
         model_id = self._select_model_id(model)
 
         prompt_str = self.prompter.craft_prompt(
-            target, response, question=question, task_type=task_type, language=language
+            target, response, question=question, task_type=task_type, language=language, **prompt_kwargs
         )
 
         standard_response_all_choices = await self._score_llm_async(
