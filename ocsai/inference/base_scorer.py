@@ -294,7 +294,8 @@ class Base_Scorer:
                         async_client=self.async_client,
                         model=model_id,
                         prompt=prompt,
-                        temperature=0,
+                        temperature=1e-9,
+                        sys_msg_text=self.prompter.sys_msg_text,
                         logprobs=logprobs,
                         stop_char=self.prompter.stop_char,  # STOP on newline only if aiming for score only
                         max_tokens=self.prompter.max_tokens,
@@ -334,7 +335,7 @@ class Base_Scorer:
                 client=self.client,
                 model=model_id,
                 prompt=prompt,
-                temperature=0,
+                temperature=1e-9,
                 sys_msg_text=self.prompter.sys_msg_text,
                 logprobs=logprobs,
                 stop_char=self.prompter.stop_char,  # STOP on newline only if aiming for score only

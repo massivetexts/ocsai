@@ -17,7 +17,7 @@ class Base_Prompter:
 
     def craft_prompt(
         self,
-        item: str,
+        item: str | None,
         response: str,
         task_type: str | None = None,
         question: str | None = None,
