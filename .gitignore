@@ -7,3 +7,4 @@ data/test_cache/
 notebooks/wandb
 old/
 notebooks/*[Dd]ev.ipynb
+.vscode/settings.json
