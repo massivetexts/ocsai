@@ -11,7 +11,6 @@ import numpy as np
 from pathlib import Path
 from ..cache import Ocsai_Cache, Ocsai_Parquet_Cache, Ocsai_Redis_Cache
 from ..llm_interface import LLM_Base_Interface
-# import asyncio
 
 
 class Base_Scorer:
@@ -318,19 +317,14 @@ class Base_Scorer:
         returns a list of responses in the same order.
 
         Returns:
-        - An OpenAI completion object if raw=True
-        - A list of strings if raw=False and top_probs=0
-        - A list of (string, ProbScores) tuples if raw=False and top_probs>0
+        - A list of lists of StandardAIResponse items. The outer list is for each prompt,
+            the inner list is for each choice (usually just one)
         """
         gptprompt = [gptprompt] if isinstance(gptprompt, str) else gptprompt
         logprobs: int | None = self._verify_logprobs(top_probs)
 
         all_responses = []
         for prompt in (tqdm(gptprompt) if len(gptprompt) > 10 else gptprompt):
-            self.logger.debug(
-                "Chat completions don't support batching, btw - so this is"
-                "considerably slower than the classic API."
-            )
             response = self.llm_interface.completion(
                 client=self.client,
                 model=model_id,
@@ -361,6 +355,7 @@ class Base_Scorer:
         debug: bool = False,
         min_size_to_write_cache: int = 100,
         use_async: bool = False,
+        sleep_between_batches: float = 0.1,
         **kwargs,
     ):
         """Get originality in a batch, with optional caching.
@@ -384,11 +379,13 @@ class Base_Scorer:
 
         responses = [r.strip() for r in responses]
 
-        def cast_to_list(x) -> list[str | None]:
+        def cast_to_list(x: list | str | pd.Series) -> list[str | None]:
             if type(x) is list and len(x) == 0:
                 x = None
             if (type(x) is str) or (x is None):
                 x = [x] * len(responses)
+            elif isinstance(x, pd.Series):
+                x = x.tolist()
             return x
 
         promptsl: list[str | None] = cast_to_list(prompts)
@@ -437,11 +434,20 @@ class Base_Scorer:
                     use_async = False
 
             if use_async:
-                standard_responses = asyncio.run(
-                    self._score_llm_async(
-                        gptprompts, model_id=model_id, top_probs=top_probs
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:  # No event loop is running
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                try:
+                    standard_responses = loop.run_until_complete(
+                        self._score_llm_async(
+                            gptprompts, model_id=model_id, top_probs=top_probs
+                        )
                     )
-                )
+                finally:
+                    loop.close()
             else:
                 standard_responses = self._score_llm(
                     gptprompts, model_id=model_id, top_probs=top_probs
@@ -477,6 +483,9 @@ class Base_Scorer:
                 scores.append(fullscore["score"])
                 confidences.append(fullscore["confidence"])
                 allflags.append(fullscore["flags"])
+
+            if sleep_between_batches:
+                time.sleep(sleep_between_batches)
 
         if self.cache:
             newly_scored = to_score.copy()
@@ -533,6 +542,7 @@ class Base_Scorer:
         min_size_to_write_cache: int = 100,
         force_overwrite: bool = False,
         use_async: bool = True,
+        sleep_between_batches: float = 0.1,
     ):
         """Run originality scoring on a dataframe, and append the results to a new dataframe"""
 
@@ -559,7 +569,8 @@ class Base_Scorer:
             raise_errs=raise_errs,
             batch_size=batch_size,
             min_size_to_write_cache=min_size_to_write_cache,
-            use_async=use_async
+            use_async=use_async,
+            sleep_between_batches=sleep_between_batches
         )
         scores_df = pd.DataFrame(scores)
         outdf = dataframe.copy()

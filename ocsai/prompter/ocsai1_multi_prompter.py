@@ -15,7 +15,7 @@ class Ocsai1_Multi_Prompter(Ocsai1_Prompter):
         # prompt templates should take 2 args - item and response
         known_task_type_codes = ['Uses', 'Instances', 'Completion']
         if task_type is None:
-            raise ValueError("Task type for classic prompter is necessary.")
+            raise ValueError("Task type for classic multi-test prompter is necessary.")
         task_type = task_type.capitalize()
         if task_type not in known_task_type_codes:
             self.logger.debug(f"Task type {task_type} not a known type.")
