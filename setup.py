@@ -12,6 +12,7 @@ setup(
         "duckdb",
         "tqdm",
         "numpy",
+        "nest_asyncio"
     ],
     extras_require={
         'dev': [

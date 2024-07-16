@@ -77,15 +77,21 @@ def mprint(*messages):
 
 def fingerprint_df(
     df, base_cols=["prompt", "response", "question", "type", "language", "model"]
-):
+) -> list[str]:
     import hashlib
 
-    return (
-        df[base_cols]
+    out_s = (df[base_cols]
         .astype(str)
         .apply(lambda x: hashlib.md5("".join(x).encode()).hexdigest(), axis=1)
-        .tolist()
     )
+    if out_s.empty:
+        return []
+
+    try:
+        return out_s.tolist()
+    except AttributeError:
+        print(out_s)
+        raise
 
 
 def set_cache_dtypes(df):

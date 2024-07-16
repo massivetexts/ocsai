@@ -11,7 +11,7 @@ import numpy as np
 from pathlib import Path
 from ..cache import Ocsai_Cache, Ocsai_Parquet_Cache, Ocsai_Redis_Cache
 from ..llm_interface import LLM_Base_Interface
-
+import nest_asyncio
 
 class Base_Scorer:
 
@@ -41,6 +41,7 @@ class Base_Scorer:
         if not max_async_processes:
             max_async_processes = self.max_async_processes
         self.async_semaphore = asyncio.Semaphore(max_async_processes)
+        nest_asyncio.apply()
         self.async_client = None
         self.client = openai.OpenAI(api_key=openai.api_key)
 
@@ -434,20 +435,11 @@ class Base_Scorer:
                     use_async = False
 
             if use_async:
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:  # No event loop is running
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                
-                try:
-                    standard_responses = loop.run_until_complete(
+                standard_responses = asyncio.run(
                         self._score_llm_async(
                             gptprompts, model_id=model_id, top_probs=top_probs
                         )
                     )
-                finally:
-                    loop.close()
             else:
                 standard_responses = self._score_llm(
                     gptprompts, model_id=model_id, top_probs=top_probs
