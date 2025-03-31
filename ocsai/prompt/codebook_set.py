@@ -17,6 +17,7 @@ import random
 import anthropic
 from .utils import hashname
 from tqdm.auto import trange, tqdm
+import pandas as pd
 
 
 class CodebookSet:
@@ -188,38 +189,43 @@ class CodebookSet:
             new_cbs.append(new_cb)
         return new_cbs
 
-    def print_evals(
+    def evals(
         self,
         model: str | None = None,
         temperature: float | None = None,
-        label_batch_size: int | None = None,
-        markdown: bool = True,
-    ) -> None:
-        evals = [
-            (
-                cb,
-                cb._fetch_evaluations(
-                    model=model,
-                    temperature=temperature,
-                    label_batch_size=label_batch_size,
-                )[0],
-            )
-            for cb in self.codebooks
-        ]
-        for i, (cb, eval) in enumerate(evals):
-            name_label = f"{i}. ({cb.name})"
-            if "protocol" in cb.metadata:
-                name_label += f" - {cb.metadata['protocol']}"
-            if "parents" in cb.metadata and len(cb.metadata["parents"]):
-                name_label += f" - parents: {cb.metadata['parents']}"
-            name_label += "\t"
-            out_str = f"{name_label}. `{eval['eval_results']}`"
-            if markdown:
-                from IPython.display import Markdown, display
+        label_batch_size: int | None = None
+    ) -> pd.DataFrame:
+        ''' Format evaluations into a DataFrame.'''
 
-                display(Markdown(out_str))
-            else:
-                print(out_str)
+        rows = []
+        for cb in self.codebooks:
+            # get all evals and filter later
+            evals = cb._fetch_evaluations()
+            for eval in evals:
+                row = dict(cb.metadata.copy())
+                row.update(eval['eval_results'])
+                row.update({
+                    'name': cb.name,
+                    'evalmodel': eval['model'],  # model used to evaluate the codebook
+                    'label_batch_size': 10, # evaluation batch size
+                    'temperature': 0.0,
+                    'test_n': len(eval['items']),
+                })
+                rows.append(row)
+        df = pd.DataFrame(rows)
+        # move some useful columns to the front
+        firstcols = ['name', 'generation', 'model', 'protocol', 'parents', 'training_example_count',
+                     'test_n', 'evalmodel', 'RMSE', 'pearsonr', 'label_batch_size', 'tokens', 'temperature']
+        # renaming mainly for readability
+        renamecols = {'training_example_count': 'train_n', 'generation': 'gen'}
+        df = df[firstcols + [col for col in df.columns if col not in firstcols]].rename(columns=renamecols)
+        if model:
+            df = df[df['evalmodel'] == model]
+        if temperature:
+            df = df[df['temperature'] == temperature]
+        if label_batch_size:
+            df = df[df['label_batch_size'] == label_batch_size]
+        return df
 
     def evaluate_codebooks(
         self,
@@ -242,24 +248,28 @@ class CodebookSet:
         pbar = tqdm(self.codebooks, desc="Evaluating codebooks", leave=False)
         all_evals = []
         for codebook in pbar:
-            evals = codebook._fetch_evaluations(
-                # items=items, # too specific
-                # targets=targets,
-                model=model,
-                temperature=temperature,
-                label_batch_size=label_batch_size,
-            )
-            if len(evals) > 0:
-                all_evals.append(evals[0])
-                continue
-            eval: EvalRun = codebook.evaluate(
-                items,
-                targets,
-                model=model,
-                temperature=temperature,
-                label_batch_size=label_batch_size,
-            )
-            all_evals.append(eval)
+            try:
+                evals = codebook._fetch_evaluations(
+                    # items=items, # too specific
+                    # targets=targets,
+                    model=model,
+                    temperature=temperature,
+                    label_batch_size=label_batch_size,
+                )
+                if len(evals) > 0:
+                    all_evals.append(evals[0])
+                    continue
+                eval: EvalRun = codebook.evaluate(
+                    items,
+                    targets,
+                    model=model,
+                    temperature=temperature,
+                    label_batch_size=label_batch_size,
+                )
+                all_evals.append(eval)
+            except KeyboardInterrupt:
+                # gracefully stop the eval loop
+                break
         return all_evals
 
     def a_b_test(self, n: int, codebook1: Codebook, codebook2: Codebook) -> float:

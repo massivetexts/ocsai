@@ -171,6 +171,7 @@ class Codebook:
         max_retries: The maximum number of retries to attempt when the
             model fails to return a valid response
         temp_backoff: The amount to increase the temperature by on each retry
+        label_batch_size: The number of items to label in each batch
         """
         all_labels: list[Label] = []
         batches: list[Dataset] = []
@@ -348,6 +349,8 @@ class Codebook:
                 elif ((key == 'model') and ('model' in eval_run)):
                     if keyvar.startswith('gpt-4-turbo') and eval_run[key].startswith('gpt-4-turbo'):
                         continue
+                    else:
+                        break
                 else:
                     break
             else:
@@ -457,11 +460,11 @@ def combine_codebooks(
         )
         codebook_strs += f"## Codebook {i} (Performance: `{eval_results_str}`)\n\n```\n{cb.codebook}\n```\n\n"
 
-        # label the examples by notebook - currently always using gpt-4-turbo-preview
+        # label the examples by notebook - currently model is hardcoded
         if labeled_examples and include_predicted_labels:
             label_collector[f"Codebook {i} label"] = cb.label(
                 list(example_data),
-                model="gpt-4-turbo-preview",
+                model="gpt-4o",
                 temperature=temperature,
                 type_check=type_check,
             )

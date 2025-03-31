@@ -108,7 +108,7 @@ def set_cache_dtypes(df):
     # numeric cols (allowing errors)
     for col in ["score", "confidence"]:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="ignore")
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # float cols
     for col in ["timestamp"]:
@@ -170,7 +170,7 @@ def upgrade_cache(
 
             # float types
             for col in ["score", "confidence"]:
-                df[col] = pd.to_numeric(df[col], errors="ignore")
+                df[col] = pd.to_numeric(df[col], errors="coerce")
 
             # check if data collector is none
             if data_collector is None:

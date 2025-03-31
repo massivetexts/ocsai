@@ -23,7 +23,7 @@ class ScoredCSVOutputParser:
             if len(row) > 2:
                 # fallback on re
                 line = ",".join(row)
-                row = re.split(", ?(\d\.\d+)", line)[:-1]
+                row = re.split(r", ?(\d\.\d+)", line)[:-1]
             assert (
                 len(row) == 2
             ), f"Currently assumes only two fields: response, score; seeing {len(row)}"

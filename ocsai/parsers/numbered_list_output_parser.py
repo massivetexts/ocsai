@@ -1,6 +1,5 @@
 import re
 
-
 class NumberedListOutputParser:
     """Parse out a numbered list."""
 
@@ -15,6 +14,6 @@ class NumberedListOutputParser:
         lines = text.strip().split("\n")
         outputs = []
         for line in lines:
-            value = re.split("^\d+\. ?", line)[-1]
+            value = re.split(r"^\d+\. ?", line)[-1]
             outputs.append(value)
         return outputs

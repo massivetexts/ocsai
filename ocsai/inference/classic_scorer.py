@@ -13,6 +13,7 @@ class Classic_Scorer(Base_Scorer):
 
     DEFAULT_PROMPTER = Ocsai1_Prompter
     DEFAULT_INTERFACE = OpenAILegacyInterface
+    max_logprobs = 5
 
     def __init__(self, *args, **kwargs):
         if "model_dict" not in kwargs or not kwargs["model_dict"]:

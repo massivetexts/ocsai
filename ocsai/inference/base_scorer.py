@@ -30,6 +30,7 @@ class Base_Scorer:
         prompter=None,
         llm_interface=None,
         max_async_processes: int | None = None,
+        apply_nest_asyncio: bool = True,
     ):
         if not logger:
             self.logger = logging.getLogger(__name__)
@@ -41,7 +42,15 @@ class Base_Scorer:
         if not max_async_processes:
             max_async_processes = self.max_async_processes
         self.async_semaphore = asyncio.Semaphore(max_async_processes)
-        nest_asyncio.apply()
+        
+        # Only apply nest_asyncio if requested and if the loop type is compatible
+        if apply_nest_asyncio:
+            try:
+                nest_asyncio.apply()
+            except ValueError as e:
+                self.logger.warning(f"Could not apply nest_asyncio: {e}")
+                self.logger.warning("This is normal when running with uvloop (e.g., in FastAPI)")
+        
         self.async_client = None
         self.client = openai.OpenAI(api_key=openai.api_key)
 
@@ -221,8 +230,10 @@ class Base_Scorer:
             else:
                 probs_to_parse = [standard_response["logprobs"]]
 
+            # print(probs_to_parse[-1])
             for logprobs in probs_to_parse:
                 probability_scores = self.prompter.probability_scores(logprobs)
+                print(probability_scores)
 
                 weighted_score: FullScore = {
                     "score": probability_scores["weighted"],
@@ -254,7 +265,7 @@ class Base_Scorer:
         if top_probs > 0:
             if top_probs > self.max_logprobs:
                 self.logger.warning(
-                    f"This API only supports {self.max_logprobs} logprobs at a time. Forcing top_probs={max_probs}."
+                    f"This API only supports {self.max_logprobs} logprobs at a time. Forcing top_probs={self.max_logprobs}."
                 )
                 top_probs = self.max_logprobs
         return top_probs if top_probs > 0 else None
