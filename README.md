@@ -5,7 +5,7 @@ These are the materials for training and analyzing Ocsai - a model for evaluatin
 This includes:
 - resources pertaining to the training of Ocsai 2
 - tools for training automated scoring models
-- materials related to confidence measures and weighted probabilistic scoring.
+- [materials related to confidence measures and weighted probabilistic scoring](./notebooks/evaluation/LogProbsOcsai1.ipynb).
 
 ## Citations 
 
