@@ -1,0 +1,59 @@
+[project]
+name = "Ocsai"
+version = "0.4"
+description = "Tools for training and using the Ocsai system for automated originality scoring."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Peter Organisciak", email = "peter.organisciak@du.edu"}
+]
+keywords = [
+    "automated originality scoring",
+    "machine learning",
+    "natural language processing",
+    "educational psychology",
+    "research methods",
+    "education",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Education :: Testing",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "pingouin",
+    "pandas",
+    "pyyaml",
+    "pyreadstat",
+    "duckdb",
+    "tqdm",
+    "numpy",
+    "nest_asyncio",
+    "openai",
+    "anthropic",
+]
+
+[project.urls]
+Website = "https://openscoring.du.edu"
+Repository = "https://www.github.com/massivetexts/ocsai"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-docker-tools",
+    "redis",
+]
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+zip-safe = true
+packages = {find = {}}
