@@ -230,10 +230,8 @@ class Base_Scorer:
             else:
                 probs_to_parse = [standard_response["logprobs"]]
 
-            # print(probs_to_parse[-1])
             for logprobs in probs_to_parse:
                 probability_scores = self.prompter.probability_scores(logprobs)
-                print(probability_scores)
 
                 weighted_score: FullScore = {
                     "score": probability_scores["weighted"],
@@ -410,9 +408,11 @@ class Base_Scorer:
         if self.cache:
             df = pd.DataFrame(
                 list(zip(promptsl, responses, questionsl, task_typesl, languagesl)),
-                columns=self.cache.base_cols[:-1],
+                columns=self.cache.base_cols[:-2],
             )
             df["model"] = model_id
+            df["method"] = "top" if top_probs <= 1 else "weighted"
+
             df = df.astype({col: "object" for col in self.cache.base_cols})
             to_score, cache_results = self.cache.get_cache_scores(df)
             promptsl = to_score.prompt.tolist()
@@ -482,7 +482,7 @@ class Base_Scorer:
                     if raise_errs:
                         print(f"GPT prompt: {gptprompts[i].strip()}")
                         print(f"raw response: {standard_response['content']}")
-                        raise
+                    raise ValueError("No score found; likely this is when trying to use weighted scoring with a model that doesn't support it. Unsupported models are ocsai-1.6 and ocsai-1.5.")
                 scores.append(fullscore["score"])
                 confidences.append(fullscore["confidence"])
                 allflags.append(fullscore["flags"])
@@ -496,6 +496,7 @@ class Base_Scorer:
             newly_scored["confidence"] = confidences
             newly_scored["flags"] = allflags
             newly_scored["timestamp"] = time.time()
+            newly_scored["method"] = "top" if top_probs <= 1 else "weighted"
             self.cache.write(newly_scored, min_size_to_write_cache)
 
             right = pd.concat([cache_results, newly_scored])
@@ -506,7 +507,7 @@ class Base_Scorer:
                 right, how="left", on=self.cache.base_cols
             ).replace({np.nan: None})
             # return a list of dicts, with score, confidence, and flags
-            return final_results[["score", "confidence", "flags"]].to_dict("records")
+            return final_results[["score", "confidence", "flags", "method"]].to_dict("records")
         else:
             final = []
             for s, c, f, r in zip(scores, confidences, allflags, responses):
@@ -525,7 +526,7 @@ class Base_Scorer:
 
                 if f is not None and (len(f) == 0):
                     f = None
-                final.append({"score": s, "confidence": c, "flags": f})
+                final.append({"score": s, "confidence": c, "flags": f, "method": "top" if top_probs <= 1 else "weighted"})
             return final
 
     def originality_df(
@@ -546,9 +547,9 @@ class Base_Scorer:
         force_overwrite: bool = False,
         use_async: bool = True,
         sleep_between_batches: float = 0.1,
+        top_probs: int = 0,
     ):
         """Run originality scoring on a dataframe, and append the results to a new dataframe"""
-
         if type_col in dataframe.columns:
             task_types = dataframe[type_col]
         else:
@@ -573,11 +574,13 @@ class Base_Scorer:
             batch_size=batch_size,
             min_size_to_write_cache=min_size_to_write_cache,
             use_async=use_async,
-            sleep_between_batches=sleep_between_batches
+            sleep_between_batches=sleep_between_batches,
+            top_probs=top_probs,
+            score_source='weighted' if top_probs > 0 else 'top'
         )
         scores_df = pd.DataFrame(scores)
         outdf = dataframe.copy()
-        newcolnames = [score_name, confidence_name, flags_name]
+        newcolnames = [score_name, confidence_name, flags_name, 'method']
         # ensure that newcolnames are not already in dataframe
         if not force_overwrite:
             for newcolname in newcolnames:
@@ -587,6 +590,10 @@ class Base_Scorer:
                         "Try setting a different name"
                     )
         outdf[newcolnames] = scores_df.values
+        # round originality and confidence to 2 decimal places
+        for col in [score_name, confidence_name]:
+            if col in outdf.columns:
+                outdf[col] = pd.to_numeric(outdf[col], errors='coerce').round(2)
         return outdf
 
     @property

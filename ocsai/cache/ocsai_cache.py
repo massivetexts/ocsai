@@ -3,7 +3,7 @@ import logging
 
 
 class Ocsai_Cache:
-    base_cols = ["prompt", "response", "question", "type", "language", "model"]
+    base_cols = ["prompt", "response", "question", "type", "language", "model", "method"]
 
     def __init__(self, cache_path=None, logger=None):
         self.cache_path = None

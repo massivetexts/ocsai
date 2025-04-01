@@ -17,7 +17,7 @@ class Ocsai_Parquet_Cache(Ocsai_Cache):
 
     def __init__(self, cache_path: str | Path, logger=None):
         super().__init__(cache_path, logger)
-        self.cache_path = cache_path
+        self.cache_path = Path(cache_path)
         self.in_memory_cache = pd.DataFrame(
             [], columns=self.base_cols + ["score", "timestamp"]
         )
@@ -87,8 +87,6 @@ class Ocsai_Parquet_Cache(Ocsai_Cache):
         
         if df.empty:
             return
-        
-
 
         # append in-memory cache
         if len(self.in_memory_cache) > 0:
