@@ -1,17 +1,17 @@
-from ocsai.prompter import Ocsai2_Prompter
+from ocsai.prompter import Ocsai1p5_Prompter
 import textwrap
 
 
 # Test Initialization
-def test_Ocsai2_Prompter_initialization():
-    prompter = Ocsai2_Prompter()
+def test_Ocsai1p5_Prompter_initialization():
+    prompter = Ocsai1p5_Prompter()
     assert prompter is not None
     assert prompter.sys_msg_text is not None
 
 
 # Test craft_prompt method
 def test_craft_prompt_method():
-    prompter = Ocsai2_Prompter()
+    prompter = Ocsai1p5_Prompter()
     prompt = prompter.craft_prompt("Pants", "makeshift flag")
     ans = """
         ACTION: TAG THE ORIGINALITY OF A RESPONSE TO A CREATIVITY TEST.
@@ -25,14 +25,14 @@ def test_craft_prompt_method():
 
 # Test craft_response method
 def test_craft_response_method():
-    prompter = Ocsai2_Prompter()
+    prompter = Ocsai1p5_Prompter()
     response = prompter.craft_response(3)
     assert response == "SCORE: 3"
 
 
 # Test prepare_example method
 def test_prepare_example_method():
-    prompter = Ocsai2_Prompter()
+    prompter = Ocsai1p5_Prompter()
     example = prompter.prepare_example(
         "Pants", "makeshift flag", language=None, target=3.3
     )
