@@ -9,3 +9,4 @@ old/
 notebooks/*[Dd]ev.ipynb
 .vscode/settings.json
 notebooks/ocsai2-dataprep/wandb/
+build/
