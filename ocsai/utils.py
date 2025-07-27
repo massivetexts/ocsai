@@ -4,7 +4,42 @@ from tqdm import tqdm
 from pathlib import Path
 import anthropic
 import openai
+import nest_asyncio
 
+nest_asyncio.apply()
+
+def _create_llm_args(text, sysmsg, model, temperature, max_tokens):
+    '''Helper function to create common arguments for LLM calls'''
+    return {
+        'model': model,
+        'temperature': temperature,
+        'max_tokens': max_tokens,
+        'messages': [
+            {'role': 'system', 'content': sysmsg},
+            {'role': 'user', 'content': text}
+        ]
+    }
+
+def _create_anthropic_args(text, sysmsg, model, temperature, max_tokens):
+    '''Helper function to create arguments for Anthropic calls'''
+    return {
+        'model': model,
+        'temperature': temperature,
+        'max_tokens': max_tokens,
+        'system': sysmsg,
+        'messages': [
+            {'role': 'user', 'content': text}
+        ]
+    }
+
+def _extract_response(response, client_type):
+    '''Helper function to extract content from response based on client type'''
+    if client_type in (anthropic.Anthropic, anthropic.AsyncAnthropic):
+        return response.content[0].text
+    elif client_type in (openai.OpenAI, openai.AsyncOpenAI):
+        return response.choices[0].message.content
+    else:
+        raise ValueError("Unsupported client type")
 
 def generic_llm(text,
                 sysmsg,
@@ -14,33 +49,35 @@ def generic_llm(text,
                 max_tokens: int = 300,
                 ) -> str:
     '''Run an openai or anthropic api call, based on the supplied client.'''
-    common_args = {
-        'model': model,
-        'temperature': temperature,
-        'max_tokens': max_tokens
-    }
     if type(client) is anthropic.Anthropic:
-        response = client.messages.create(
-                system=sysmsg,
-                messages=[
-                    {'role': 'user', 'content': text}
-                ],
-                **common_args
-            )
-
-        content = response.content[0].text
+        args = _create_anthropic_args(text, sysmsg, model, temperature, max_tokens)
+        response = client.messages.create(**args)
     elif type(client) is openai.OpenAI:
-        response = client.chat.completions.create(
-            messages=[
-                {'role': 'system', 'content': sysmsg},
-                {'role': 'user', 'content': text}
-            ],
-            **common_args
-        )
-        content = response.choices[0].message.content
+        args = _create_llm_args(text, sysmsg, model, temperature, max_tokens)
+        response = client.chat.completions.create(**args)
     else:
         raise ValueError("client must be either an anthropic.Anthropic or openai.OpenAI object.")
-    return content
+    
+    return _extract_response(response, type(client))
+
+async def generic_llm_async(text,
+                sysmsg,
+                client: anthropic.AsyncAnthropic | openai.AsyncOpenAI,
+                model: str = 'gpt-3.5-turbo',
+                temperature: float = 0.0,
+                max_tokens: int = 300,
+                ) -> str:
+    '''Run an async openai or anthropic api call, based on the supplied client.'''
+    if type(client) is anthropic.AsyncAnthropic:
+        args = _create_anthropic_args(text, sysmsg, model, temperature, max_tokens)
+        response = await client.messages.create(**args)
+    elif type(client) is openai.AsyncOpenAI:
+        args = _create_llm_args(text, sysmsg, model, temperature, max_tokens)
+        response = await client.chat.completions.create(**args)
+    else:
+        raise ValueError("client must be either an anthropic.AsyncAnthropic or openai.AsyncOpenAI object.")
+    
+    return _extract_response(response, type(client))
 
 def can_render_md_html():
     try:
