@@ -10,3 +10,11 @@ notebooks/*[Dd]ev.ipynb
 .vscode/settings.json
 notebooks/ocsai2-dataprep/wandb/
 build/
+notebooks/ocsai2-dataprep/.env
+# temp - I let this repo get too old and too neglected,
+# todo: gradually remove these and make sense of what they were
+data/training/ocsai2/
+data/codebook/
+data/results/ocsai-1.5/
+data/training/gpt/
+reviews/
