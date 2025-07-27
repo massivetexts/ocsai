@@ -34,7 +34,7 @@ class Ocsai1_Prompter(Base_Prompter):
         # This is format of trained models in Organisciak, Acar, Dumas, and Berthiaume
         return prompt_template.format(item, response)
 
-    def craft_response(self, score, confidence=None, flags=None):
+    def craft_response(self, score: float, confidence=None, flags=None):
         """
         Just a number
         """

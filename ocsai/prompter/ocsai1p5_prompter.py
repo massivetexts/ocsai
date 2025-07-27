@@ -4,7 +4,7 @@ import random
 import numpy as np
 import re
 import pandas as pd
-from typing import TypedDict, Literal
+from typing import TypedDict, Literal, Optional
 import logging
 
 class TrainProbs(TypedDict, total=False):
@@ -14,7 +14,7 @@ class TrainProbs(TypedDict, total=False):
     language_exclude_prob: float
     question_exclude_prob: float
     detail_exclude_prob: float
-    no_flags: bool
+    no_flags: Optional[bool]
 
 
 class Ocsai1p5_Prompter(Base_Prompter):
