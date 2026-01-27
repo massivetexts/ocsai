@@ -7,6 +7,7 @@ This includes:
 - tools for training automated scoring models
 - [materials related to confidence measures and weighted probabilistic scoring](./notebooks/evaluation/LogProbsOcsai1.ipynb).
 
+
 ## Further Information
 ### Citations 
 
@@ -20,6 +21,7 @@ Ocsai is trained on a great deal of data, from a number of past studies. The tra
 
 Associated research: [DOI: 10.13140/RG.2.2.32393.31840](https://doi.org/10.13140/RG.2.2.32393.31840)
 Drawing Originality Image Processing Models: [ocsai-d](https://huggingface.co/collections/massivetexts/ocsai-d)
+
 
 ## Usage
 ### Live Version
