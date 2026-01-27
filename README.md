@@ -19,8 +19,8 @@ Ocsai is trained on a great deal of data, from a number of past studies. The tra
 
 ### Other links
 
-Associated research: [DOI: 10.13140/RG.2.2.32393.31840](https://doi.org/10.13140/RG.2.2.32393.31840)
-Drawing Originality Image Processing Models: [ocsai-d](https://huggingface.co/collections/massivetexts/ocsai-d)
+- Associated research: [DOI: 10.13140/RG.2.2.32393.31840](https://doi.org/10.13140/RG.2.2.32393.31840)
+- Drawing Originality Image Processing Models: [ocsai-d](https://huggingface.co/collections/massivetexts/ocsai-d)
 
 
 ## Usage
