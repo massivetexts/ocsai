@@ -1,35 +1,44 @@
+"""
+Tests for Ocsai_Redis_Cache that use the local Redis instance.
+
+These tests use a separate key prefix to avoid affecting production data.
+Run with: python -m pytest tests/cache/test_ocsai_redis_cache_local.py -v
+"""
 import pytest
 import redis
 import pandas as pd
 import numpy as np
-from ocsai.cache import Ocsai_Redis_Cache
+from ocsai.cache.ocsai_redis_cache import Ocsai_Redis_Cache
 
-# uses a docker image, so that we don't overwrite the actual redis database
-from pytest_docker_tools import container, fetch
 
-redis_image = fetch(repository='redis:latest')
-redis_container = container(
-    image="{redis_image.id}",
-    scope="module",
-    ports={"6379/tcp": None},  # Let Docker assign a random port
-)
+# Use a test-specific prefix to avoid affecting production data
+TEST_KEY_PREFIX = "ocsai_cache_TEST:"
+
+
+class TestableRedisCache(Ocsai_Redis_Cache):
+    """Redis cache with a test-specific key prefix."""
+    KEY_PREFIX = TEST_KEY_PREFIX
 
 
 @pytest.fixture(scope="module")
-def redis_client(redis_container):
-    port = redis_container.ports["6379/tcp"][0]
-    client = redis.Redis(host="localhost", port=port)
-    client.flushdb()  # Clear the database before running tests
-    yield client
-    client.flushdb()  # Clear the database after running tests
+def redis_available():
+    """Check if Redis is available."""
+    try:
+        client = redis.Redis(host="localhost", port=6379)
+        client.ping()
+        return True
+    except redis.RedisError:
+        return False
 
 
 @pytest.fixture
-def cache(redis_client):
-    redis_url = (
-        f"redis://localhost:{redis_client.connection_pool.connection_kwargs['port']}"
-    )
-    return Ocsai_Redis_Cache(redis_url=redis_url)
+def cache(redis_available):
+    if not redis_available:
+        pytest.skip("Redis not available")
+    cache = TestableRedisCache(redis_url="redis://localhost:6379")
+    cache.clear()  # Start fresh
+    yield cache
+    cache.clear()  # Clean up
 
 
 @pytest.fixture
@@ -67,8 +76,11 @@ class TestCacheInitialization:
         assert cache.base_cols == expected
 
     def test_is_empty_on_fresh_cache(self, cache):
-        cache.clear()
         assert cache.is_empty() is True
+
+    def test_uses_test_prefix(self, cache):
+        """Ensure we're using the test prefix."""
+        assert cache.KEY_PREFIX == TEST_KEY_PREFIX
 
 
 class TestKeyGeneration:
@@ -86,7 +98,7 @@ class TestKeyGeneration:
         # Keys are sorted alphabetically by column name:
         # language, method, model, prompt, question, response, type
         expected_key = (
-            "ocsai_cache:Test language:top:Test model:Test prompt:Test question:Test response:Test type"
+            f"{TEST_KEY_PREFIX}Test language:top:Test model:Test prompt:Test question:Test response:Test type"
         )
         assert key == expected_key
 
@@ -94,13 +106,11 @@ class TestKeyGeneration:
         """Ensure all keys have the namespace prefix."""
         row = sample_df.iloc[0]
         key = cache._generate_cache_key(row)
-        assert key.startswith("ocsai_cache:")
+        assert key.startswith(TEST_KEY_PREFIX)
 
 
 class TestWriteAndRead:
     def test_write_and_get_cache_scores(self, cache, sample_df_with_scores):
-        cache.clear()
-
         # Write to cache
         cache.write(sample_df_with_scores)
 
@@ -132,8 +142,6 @@ class TestWriteAndRead:
 class TestPartialCacheRetrieval:
     def test_partial_cache_retrieval(self, cache):
         """Test that we correctly split cached vs uncached rows."""
-        cache.clear()
-
         df_existing = pd.DataFrame([{
             "prompt": "Existing prompt",
             "response": "Existing response",
@@ -176,8 +184,6 @@ class TestPartialCacheRetrieval:
 class TestColumnPreservation:
     def test_to_score_preserves_all_columns(self, cache):
         """The to_score DataFrame should preserve all columns from the original."""
-        cache.clear()
-
         # Create a DataFrame with extra columns beyond base_cols
         df = pd.DataFrame([{
             "prompt": "test",
@@ -203,10 +209,8 @@ class TestColumnPreservation:
 class TestSpecialValues:
     def test_handles_nan_values(self, cache):
         """Cache should handle NaN values correctly."""
-        cache.clear()
-
         df = pd.DataFrame([{
-            "prompt": "test",
+            "prompt": "test_nan",
             "response": "test response",
             "question": "",  # empty string
             "type": "uses",
@@ -231,10 +235,8 @@ class TestSpecialValues:
 
     def test_handles_list_in_flags(self, cache):
         """Cache should correctly serialize/deserialize list values."""
-        cache.clear()
-
         df = pd.DataFrame([{
-            "prompt": "test",
+            "prompt": "test_flags",
             "response": "test response",
             "question": "test q",
             "type": "uses",
@@ -274,8 +276,6 @@ class TestIntegrationWithScorer:
 
     def test_scorer_workflow(self, cache):
         """Simulate the full scorer workflow."""
-        cache.clear()
-
         # 1. Scorer creates DataFrame from input (simulating base_scorer.py lines 409-414)
         # base_cols[:-2] = first 5 cols, then model and method added separately
         prompts = ["brick", "paper clip"]
@@ -328,4 +328,4 @@ class TestIntegrationWithScorer:
 
 
 if __name__ == "__main__":
-    pytest.main()
+    pytest.main([__file__, "-v"])
