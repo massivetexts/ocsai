@@ -58,6 +58,7 @@ class Ocsai_Redis_Cache(Ocsai_Cache):
         """
         self._check_input_format(df)
         df = set_cache_dtypes(df)
+        df = df.drop_duplicates(subset=self.base_cols)
 
         if df.empty:
             empty_df = pd.DataFrame([], columns=self.base_cols)
@@ -73,7 +74,7 @@ class Ocsai_Redis_Cache(Ocsai_Cache):
             cached_results = pipeline.execute()
         except redis.RedisError as e:
             self.logger.warning(f"Redis error fetching cache, treating all as uncached: {e}")
-            # On Redis failure, return all rows as needing scoring
+            # On Redis failure, return all rows as needing scoring (already deduped above)
             empty_cached = pd.DataFrame([], columns=self.base_cols + ["score", "confidence", "flags", "timestamp"])
             return df.copy(), set_cache_dtypes(empty_cached)
 
@@ -103,6 +104,7 @@ class Ocsai_Redis_Cache(Ocsai_Cache):
 
         self.logger.debug(f"Cache hit: {len(cached_scores)}/{len(df)}, to score: {len(to_score_indices)}")
 
+        cache_results_df = cache_results_df.drop_duplicates(subset=self.base_cols)
         return to_score_df, cache_results_df
 
     def write(self, df: pd.DataFrame, min_size_to_write: int = 0):

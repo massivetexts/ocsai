@@ -418,6 +418,8 @@ class Base_Scorer:
             promptsl = to_score.prompt.tolist()
             questionsl = to_score.question.tolist()
             responses = to_score.response.tolist()
+            task_typesl = to_score["type"].tolist()
+            languagesl = to_score.language.tolist()
 
         nbatches = np.ceil(len(responses) / batch_size).astype(int)
 
@@ -500,6 +502,7 @@ class Base_Scorer:
             self.cache.write(newly_scored, min_size_to_write_cache)
 
             right = pd.concat([cache_results, newly_scored])
+            right = right.drop_duplicates(subset=self.cache.base_cols)
             self.logger.debug(
                 f"score length: {len(right)}; Merging back to original {len(df)} item frame"
             )

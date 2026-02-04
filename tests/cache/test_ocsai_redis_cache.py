@@ -327,5 +327,116 @@ class TestIntegrationWithScorer:
         assert to_score3.iloc[0]["prompt"] == "fork"
 
 
+class TestDuplicateInputRows:
+    """Tests that duplicate input rows are properly deduplicated."""
+
+    def _make_row(self, prompt="pencil", response="writing", question="uses?",
+                  type_="uses", language="eng", model="gpt-4", method="top"):
+        return {
+            "prompt": prompt, "response": response, "question": question,
+            "type": type_, "language": language, "model": model, "method": method,
+        }
+
+    def test_duplicate_uncached_rows_deduplicated(self, cache):
+        """4 identical uncached rows should yield only 1 row in to_score."""
+        cache.clear()
+        rows = [self._make_row() for _ in range(4)]
+        df = pd.DataFrame(rows)
+
+        to_score, cached = cache.get_cache_scores(df)
+        assert len(to_score) == 1
+        assert len(cached) == 0
+
+    def test_duplicate_cached_rows_deduplicated(self, cache):
+        """4 identical cached rows should yield only 1 row in cache_results."""
+        cache.clear()
+
+        scored = pd.DataFrame([self._make_row()])
+        scored["score"] = 0.75
+        scored["confidence"] = 3
+        scored["flags"] = [[]]
+        scored["timestamp"] = 1627849187.123
+        cache.write(scored)
+
+        rows = [self._make_row() for _ in range(4)]
+        df = pd.DataFrame(rows)
+
+        to_score, cached = cache.get_cache_scores(df)
+        assert len(to_score) == 0
+        assert len(cached) == 1
+        assert cached.iloc[0]["score"] == 0.75
+
+    def test_mixed_duplicate_and_unique_rows(self, cache):
+        """Mix of duplicated cached + duplicated uncached rows."""
+        cache.clear()
+
+        # Cache one item
+        scored = pd.DataFrame([self._make_row(prompt="brick", response="doorstop")])
+        scored["score"] = 0.8
+        scored["confidence"] = 4
+        scored["flags"] = [[]]
+        scored["timestamp"] = 1627849187.123
+        cache.write(scored)
+
+        # Build input: 3x cached dupe + 4x uncached dupe + 1 unique uncached
+        rows = (
+            [self._make_row(prompt="brick", response="doorstop")] * 3
+            + [self._make_row(prompt="pencil", response="writing")] * 4
+            + [self._make_row(prompt="fork", response="eating")]
+        )
+        df = pd.DataFrame(rows)
+
+        to_score, cached = cache.get_cache_scores(df)
+        # 3 unique rows total: 1 cached, 2 uncached
+        assert len(cached) == 1
+        assert len(to_score) == 2
+
+    def test_scorer_merge_with_duplicates(self, cache):
+        """Simulate the full scorer merge path with duplicate input rows.
+
+        Verifies that the output row count matches the input row count
+        after the merge in originality_batch().
+        """
+        cache.clear()
+
+        # Cache one item
+        scored_row = self._make_row(prompt="brick", response="doorstop")
+        scored = pd.DataFrame([scored_row])
+        scored["score"] = 0.8
+        scored["confidence"] = 4
+        scored["flags"] = [[]]
+        scored["timestamp"] = 1627849187.123
+        cache.write(scored)
+
+        # Input with duplicates (simulating originality_batch's df)
+        rows = (
+            [self._make_row(prompt="brick", response="doorstop")] * 3
+            + [self._make_row(prompt="pencil", response="writing")] * 4
+        )
+        df = pd.DataFrame(rows)
+        df = df.astype({col: "object" for col in cache.base_cols})
+
+        to_score, cache_results = cache.get_cache_scores(df)
+
+        # Simulate scoring the uncached items
+        newly_scored = to_score.copy()
+        newly_scored["score"] = [0.6]
+        newly_scored["confidence"] = [3]
+        newly_scored["flags"] = [[]]
+        newly_scored["timestamp"] = 1627849187.123
+
+        # Merge path from originality_batch
+        right = pd.concat([cache_results, newly_scored])
+        right = right.drop_duplicates(subset=cache.base_cols)
+        final = df.merge(right, how="left", on=cache.base_cols)
+
+        # Output row count must match input row count
+        assert len(final) == len(df), (
+            f"Merge produced {len(final)} rows but input had {len(df)}"
+        )
+        # All rows should have scores
+        assert final["score"].notna().all()
+
+
 if __name__ == "__main__":
     pytest.main()
