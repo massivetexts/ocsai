@@ -11,6 +11,8 @@ notebooks/*[Dd]ev.ipynb
 notebooks/ocsai2-dataprep/wandb/
 build/
 notebooks/ocsai2-dataprep/.env
+.env
+
 # temp - I let this repo get too old and too neglected,
 # todo: gradually remove these and make sense of what they were
 data/training/ocsai2/
